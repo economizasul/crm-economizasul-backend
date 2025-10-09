@@ -64,5 +64,5 @@ app.get('/', async (req, res) => {
 
 // Inicia o servidor Node.js
 app.listen(port, () => {
-    console.log(\`Servidor Node.js rodando na porta \${port}\`);
+    console.log(`Servidor Node.js rodando na porta ${port}`);
 });
