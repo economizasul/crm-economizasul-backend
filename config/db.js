@@ -1,12 +1,9 @@
 // config/db.js
 
-// 1. IMPORTAÇÕES NO TOPO (Usando o 'bcrypt' que está no seu package.json)
 const bcrypt = require('bcrypt'); 
 const { Pool } = require('pg');
 require('dotenv').config(); 
 
-// 2. CONFIGURAÇÃO DE CONEXÃO
-// NOTE: 'new' é usado apenas uma vez.
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL,
     ssl: {
@@ -14,12 +11,10 @@ const pool = new Pool({
     }
 });
 
-// 3. GARANTE QUE AS TABELAS E O ADMIN EXISTAM
 const ensureTablesExist = async () => {
     try {
         
-        // ⚠️ Força a recriação das tabelas para garantir colunas e limpar dados
-        // Usamos CASCADE para remover referências (Foreign Keys) antes de deletar.
+        // ⚠️ Força a recriação das 3 tabelas
         await pool.query(`DROP TABLE IF EXISTS leads CASCADE;`);
         await pool.query(`DROP TABLE IF EXISTS clients CASCADE;`);
         await pool.query(`DROP TABLE IF EXISTS users CASCADE;`);
@@ -37,18 +32,19 @@ const ensureTablesExist = async () => {
             );
         `);
         
-        // 2. Tabela 'clients'
+        // 2. Tabela 'clients' (CLIENTS CORRIGIDA COM owner_id)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS clients (
                 id SERIAL PRIMARY KEY,
                 name VARCHAR(100) NOT NULL,
                 email VARCHAR(100),
                 phone VARCHAR(50),
+                owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL, 
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `);
         
-        // 3. Tabela 'leads'
+        // 3. Tabela 'leads' (LEADS CORRIGIDA COM owner_id)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS leads (
                 id SERIAL PRIMARY KEY,
@@ -62,21 +58,19 @@ const ensureTablesExist = async () => {
             );
         `);
 
-        // 4. 🔑 GARANTIR USUÁRIO ADMIN (Chave Estrangeira)
+        // 4. GARANTIR USUÁRIO ADMIN (ID 1)
         const checkUser = await pool.query(`SELECT id FROM users WHERE email = $1`, ['admin@economizasul.com']);
         
         if (checkUser.rows.length === 0) {
             const salt = await bcrypt.genSalt(10);
             const hashedPassword = await bcrypt.hash('SenhaSegura123', salt);
             
-            // Inserção do admin com ID fixo 1
             await pool.query(
                 `INSERT INTO users (id, name, email, password, role)
                  VALUES (1, 'Admin Padrão', 'admin@economizasul.com', $1, 'admin')
                  ON CONFLICT (id) DO NOTHING`, 
                  [hashedPassword]
             );
-            // Reseta a sequência para que novos usuários usem o próximo ID disponível (a partir do 2)
             await pool.query(`SELECT setval('users_id_seq', (SELECT MAX(id) FROM users));`);
             
             console.log("✅ Usuário admin@economizasul.com garantido (ID 1).");
