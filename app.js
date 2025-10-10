@@ -37,7 +37,14 @@ app.get('/', (req, res) => {
     `;
     res.send(htmlContent);
 });
+app.get('/', (req, res) => {
+// ...
+});
 
+app.use('/api/clients', clientRoutes); 
+
+// FUTURAMENTE:
+// app.use('/api/leads', leadRoutes);
 // FUTURAMENTE:
 // app.use('/api/clients', clientRoutes);
 // app.use('/api/leads', leadRoutes);
