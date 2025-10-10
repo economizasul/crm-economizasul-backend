@@ -5,8 +5,8 @@ const Lead = require('../models/Lead');
 class LeadController {
     // 1. Criar Lead (POST /api/leads)
     static async createLead(req, res) {
-        // ID temporário 1 (substituído pelo ID do usuário autenticado no futuro)
-        const owner_id = 1; 
+        // ID do usuário logado obtido do middleware 'protect'
+        const owner_id = req.user.id; 
         const { name, email, phone, status, source } = req.body;
         
         if (!name) {
@@ -23,7 +23,7 @@ class LeadController {
                 phone, 
                 status: leadStatus, 
                 source, 
-                owner_id 
+                owner_id // USANDO O ID DO USUÁRIO AQUI
             });
             res.status(201).json({ 
                 message: "Lead criado com sucesso!", 
@@ -36,17 +36,20 @@ class LeadController {
     }
 
     // 2. Listar Todos os Leads (GET /api/leads)
+    // Agora lista apenas leads do usuário logado
     static async getAllLeads(req, res) {
+        const owner_id = req.user.id; // ID do usuário logado
         try {
-            const leads = await Lead.findAll();
+            // Buscando leads APENAS para o ID do usuário logado
+            const leads = await Lead.findByOwner(owner_id);
             res.status(200).json(leads);
         } catch (error) {
             console.error('Erro ao listar leads:', error);
             res.status(500).json({ error: 'Erro interno do servidor ao buscar leads.' });
         }
     }
-
-    // 3. Buscar Lead por ID (GET /api/leads/:id)
+    
+    // 3. Buscar Lead por ID (GET /api/leads/:id) - Mantém a busca
     static async getLeadById(req, res) {
         const { id } = req.params;
         try {
@@ -55,6 +58,12 @@ class LeadController {
             if (!lead) {
                 return res.status(404).json({ error: "Lead não encontrado." });
             }
+
+            // SEGURANÇA: Garante que o usuário só pode ver seus próprios leads
+            if (lead.owner_id !== req.user.id) {
+                return res.status(403).json({ error: "Acesso negado." });
+            }
+
             res.status(200).json(lead);
         } catch (error) {
             console.error('Erro ao buscar lead por ID:', error);
@@ -65,14 +74,18 @@ class LeadController {
     // 4. Atualizar Lead (PUT /api/leads/:id)
     static async updateLead(req, res) {
         const { id } = req.params;
+        const owner_id = req.user.id; // ID do usuário logado
         const { name, email, phone, status, source } = req.body;
-
+        
         try {
-            const updatedLead = await Lead.update(id, { name, email, phone, status, source });
-
-            if (!updatedLead) {
-                return res.status(404).json({ error: "Lead não encontrado." });
+            // 1. Verifica se o Lead pertence ao usuário
+            const existingLead = await Lead.findById(id);
+            if (!existingLead || existingLead.owner_id !== owner_id) {
+                return res.status(403).json({ error: "Acesso negado ou Lead não encontrado." });
             }
+
+            // 2. Atualiza
+            const updatedLead = await Lead.update(id, { name, email, phone, status, source });
 
             res.status(200).json({ 
                 message: "Lead atualizado com sucesso!", 
@@ -87,13 +100,17 @@ class LeadController {
     // 5. Excluir Lead (DELETE /api/leads/:id)
     static async deleteLead(req, res) {
         const { id } = req.params;
+        const owner_id = req.user.id; // ID do usuário logado
 
         try {
-            const wasDeleted = await Lead.delete(id);
-
-            if (!wasDeleted) {
-                return res.status(404).json({ error: "Lead não encontrado." });
+            // 1. Verifica se o Lead pertence ao usuário antes de excluir
+            const existingLead = await Lead.findById(id);
+            if (!existingLead || existingLead.owner_id !== owner_id) {
+                return res.status(403).json({ error: "Acesso negado ou Lead não encontrado." });
             }
+            
+            // 2. Exclui
+            const wasDeleted = await Lead.delete(id);
 
             res.status(200).json({ message: "Lead excluído com sucesso." });
         } catch (error) {
@@ -103,4 +120,4 @@ class LeadController {
     }
 }
 
-module.exports = LeadController; // <<< Linha crítica para o deploy
+module.exports = LeadController;

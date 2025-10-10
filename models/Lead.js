@@ -3,90 +3,117 @@
 const { pool } = require('../config/db');
 
 class Lead {
-    // 1. Criar um novo Lead
-    static async create({ name, email, phone, status, source, owner_id }) {
-        try {
-            const result = await pool.query(
-                `INSERT INTO leads (name, email, phone, status, source, owner_id)
-                 VALUES ($1, $2, $3, $4, $5, $6)
-                 RETURNING *`,
-                [name, email, phone, status, source, owner_id]
+    // 1. Cria a tabela de Leads se não existir
+    static async createTable() {
+        const query = `
+            CREATE TABLE IF NOT EXISTS leads (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE,
+                phone VARCHAR(20),
+                status VARCHAR(50) DEFAULT 'Novo', -- Novo, Em Contato, Qualificado, Convertido, Perdido
+                source VARCHAR(100),
+                owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
+                created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            return result.rows[0];
+        `;
+        try {
+            await pool.query(query);
+            console.log("Tabela 'leads' verificada/criada com sucesso.");
         } catch (error) {
-            console.error('Erro no Lead.create:', error);
-            throw new Error('Não foi possível criar o Lead.');
+            console.error("Erro ao criar tabela 'leads':", error);
         }
     }
 
-    // 2. Buscar todos os Leads
-    static async findAll() {
+    // 2. Cria um novo Lead
+    static async create({ name, email, phone, status, source, owner_id }) {
+        const query = `
+            INSERT INTO leads (name, email, phone, status, source, owner_id)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            RETURNING *;
+        `;
+        const values = [name, email, phone, status, source, owner_id];
         try {
-            const result = await pool.query(`SELECT * FROM leads ORDER BY created_at DESC`);
+            const result = await pool.query(query, values);
+            return result.rows[0];
+        } catch (error) {
+            console.error('Erro no modelo ao criar lead:', error);
+            throw error;
+        }
+    }
+
+    // 3. Busca todos os Leads (AGORA FILTRANDO PELO DONO)
+    static async findByOwner(ownerId) {
+        const query = `
+            SELECT * FROM leads WHERE owner_id = $1 ORDER BY created_at DESC;
+        `;
+        try {
+            const result = await pool.query(query, [ownerId]);
             return result.rows;
         } catch (error) {
-            console.error('Erro no Lead.findAll:', error);
-            throw new Error('Não foi possível buscar a lista de Leads.');
-        }
-    }
-
-    // 3. Buscar Lead por ID
-    static async findById(id) {
-        try {
-            const result = await pool.query(`SELECT * FROM leads WHERE id = $1`, [id]);
-            return result.rows[0];
-        } catch (error) {
-            console.error('Erro no Lead.findById:', error);
-            throw new Error('Não foi possível buscar o Lead.');
-        }
-    }
-
-    // 4. Atualizar um Lead (dados gerais)
-    static async update(id, { name, email, phone, status, source }) {
-        try {
-            const result = await pool.query(
-                `UPDATE leads
-                 SET name = $1, email = $2, phone = $3, status = $4, source = $5
-                 WHERE id = $6
-                 RETURNING *`,
-                [name, email, phone, status, source, id]
-            );
-
-            if (result.rows.length === 0) {
-                return null;
-            }
-            return result.rows[0];
-        } catch (error) {
-            console.error('Erro no Lead.update:', error);
-            throw new Error('Não foi possível atualizar o Lead.');
+            console.error('Erro no modelo ao buscar leads por dono:', error);
+            throw error;
         }
     }
     
-    // 5. Atualizar apenas o Status do Lead (Usado no Pipeline)
-    static async updateStatus(id, newStatus) {
+    // 4. Busca Lead por ID
+    static async findById(id) {
+        const query = 'SELECT * FROM leads WHERE id = $1';
         try {
-            const result = await pool.query(
-                `UPDATE leads
-                 SET status = $1
-                 WHERE id = $2
-                 RETURNING *`,
-                [newStatus, id]
-            );
-            return result.rows[0];
+            const result = await pool.query(query, [id]);
+            return result.rows[0] || null;
         } catch (error) {
-            console.error('Erro no Lead.updateStatus:', error);
-            throw new Error('Não foi possível atualizar o status do Lead.');
+            console.error('Erro no modelo ao buscar lead por ID:', error);
+            throw error;
         }
     }
 
-    // 6. Excluir um Lead
-    static async delete(id) {
+    // 5. Atualiza Lead
+    static async update(id, { name, email, phone, status, source }) {
+        const query = `
+            UPDATE leads
+            SET name = $1, email = $2, phone = $3, status = $4, source = $5, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $6
+            RETURNING *;
+        `;
+        const values = [name, email, phone, status, source, id];
         try {
-            const result = await pool.query(`DELETE FROM leads WHERE id = $1 RETURNING *`, [id]);
-            return result.rows.length > 0;
+            const result = await pool.query(query, values);
+            return result.rows[0] || null;
         } catch (error) {
-            console.error('Erro no Lead.delete:', error);
-            throw new Error('Não foi possível excluir o Lead.');
+            console.error('Erro no modelo ao atualizar lead:', error);
+            throw error;
+        }
+    }
+
+    // 6. Atualiza APENAS o status (usado no pipeline)
+    static async updateStatus(id, newStatus) {
+        const query = `
+            UPDATE leads
+            SET status = $1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $2
+            RETURNING *;
+        `;
+        const values = [newStatus, id];
+        try {
+            const result = await pool.query(query, values);
+            return result.rows[0] || null;
+        } catch (error) {
+            console.error('Erro no modelo ao atualizar status do lead:', error);
+            throw error;
+        }
+    }
+
+    // 7. Exclui Lead
+    static async delete(id) {
+        const query = 'DELETE FROM leads WHERE id = $1 RETURNING *;';
+        try {
+            const result = await pool.query(query, [id]);
+            return result.rowCount > 0;
+        } catch (error) {
+            console.error('Erro no modelo ao excluir lead:', error);
+            throw error;
         }
     }
 }

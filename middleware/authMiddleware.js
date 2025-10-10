@@ -1,46 +1,46 @@
 // middleware/authMiddleware.js
-const jwt = require('jsonwebtoken');
 
-// 1. Função que verifica se o Token existe e é válido
-const protect = (req, res, next) => {
+const jwt = require('jsonwebtoken');
+const User = require('../models/User'); 
+
+// Chave Secreta do JWT (Deve ser a mesma usada no UserController)
+const JWT_SECRET = process.env.JWT_SECRET || 'chave_super_secreta_padrao';
+
+// Middleware de Proteção de Rotas
+const protect = async (req, res, next) => {
     let token;
 
-    // O token é enviado no cabeçalho 'Authorization' como: "Bearer TOKEN_AQUI"
+    // 1. Verifica se o token está no cabeçalho
     if (
         req.headers.authorization &&
         req.headers.authorization.startsWith('Bearer')
     ) {
         try {
-            // Extrai o TOKEN da string "Bearer TOKEN_AQUI"
+            // Obtém o token do cabeçalho "Bearer <token>"
             token = req.headers.authorization.split(' ')[1];
 
-            // Verifica e decodifica o token usando a chave secreta
-            const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            
-            // Opcional: Anexa os dados decodificados do usuário na requisição (ex: req.user.id)
-            // Aqui vamos apenas passar para a próxima função (next())
+            // 2. Verifica e decodifica o token
+            const decoded = jwt.verify(token, JWT_SECRET);
 
-            next(); // Prossegue para a próxima função (o Controlador)
+            // 3. Anexa o ID do usuário à requisição (req.user)
+            // Agora, qualquer controller que usar este middleware terá acesso a req.user.id
+            req.user = await User.findById(decoded.id);
+
+            if (!req.user) {
+                return res.status(401).json({ error: 'Não autorizado, usuário não encontrado.' });
+            }
+
+            next(); // Prossegue para a próxima função (o Controller)
+
         } catch (error) {
-            console.error('Erro na validação do token:', error);
-            return res.status(401).json({ message: 'Não autorizado, token falhou.' });
+            console.error(error);
+            return res.status(401).json({ error: 'Não autorizado, token falhou.' });
         }
     }
 
     if (!token) {
-        return res.status(401).json({ message: 'Não autorizado, nenhum token.' });
+        return res.status(401).json({ error: 'Não autorizado, token não encontrado.' });
     }
 };
 
-
-// 2. Função que verifica se o usuário tem a role (função) necessária
-const admin = (req, res, next) => {
-    // Para simplificar, vamos deixar esta função vazia por enquanto.
-    // Em um cenário real, você decodificaria o token (como em 'protect') e checaria se req.user.role === 'admin'.
-    
-    // Como a rota de Clientes é a primeira a ser protegida, vamos usar apenas 'protect' por enquanto.
-    next(); 
-};
-
-
-module.exports = { protect, admin };
+module.exports = { protect };
