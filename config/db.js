@@ -9,10 +9,11 @@ const pool = new Pool({
   }
 }); // ⬅️ CORREÇÃO 1: Faltava o fechamento do objeto e do construtor da Pool
 
-// Função que cria as tabelas se elas não existirem (requerida pelo app.js)
+// config/db.js (Dentro da função ensureTablesExist)
+
 const ensureTablesExist = async () => {
     try {
-        // SQL para criar a tabela 'users' (necessária para login)
+        // 1. Tabela 'users' (necessária para login)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -23,7 +24,7 @@ const ensureTablesExist = async () => {
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `);
-        // SQL para criar a tabela 'clients' (necessária para o GET /clients)
+        // 2. Tabela 'clients' (para clientes ativos)
         await pool.query(`
             CREATE TABLE IF NOT EXISTS clients (
                 id SERIAL PRIMARY KEY,
@@ -33,12 +34,27 @@ const ensureTablesExist = async () => {
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `);
-        console.log("Tabelas 'users' e 'clients' verificadas/criadas com sucesso.");
+        // 3. 🆕 NOVA TABELA: 'leads' (para prospects e oportunidades)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS leads (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100),
+                phone VARCHAR(50),
+                status VARCHAR(50) DEFAULT 'Novo',
+                source VARCHAR(100),
+                owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log("Tabelas 'users', 'clients', e 'leads' verificadas/criadas com sucesso.");
     } catch (err) {
         console.error("ERRO FATAL: Não foi possível criar ou verificar as tabelas.", err);
         throw err; 
     }
 };
+
+// ... o restante do db.js com a exportação (module.exports = { pool, ensureTablesExist };)
 
 
 module.exports = {
