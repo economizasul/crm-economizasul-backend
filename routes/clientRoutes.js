@@ -1,25 +1,17 @@
 // routes/clientRoutes.js
+
 const express = require('express');
 const router = express.Router();
 const ClientController = require('../controllers/ClientController');
 
-// Rotas Sem ID (Coleção)
+// 1. Importa a função 'protect' do arquivo de middleware
+const { protect } = require('../middleware/authMiddleware'); 
 
-// Rota 1: POST /api/clients (Criação)
-router.post('/', ClientController.createClient);
-
-// Rota 2: GET /api/clients (Listagem de Todos)
-router.get('/', ClientController.getAllClients);
-
-// Rotas Com ID (Recurso Específico)
-
-// Rota 3: GET /api/clients/:id (Busca por ID)
-router.get('/:id', ClientController.getClientById);
-
-// Rota 4: PUT /api/clients/:id (Atualização Completa)
-router.put('/:id', ClientController.updateClient);
-
-// Rota 5: DELETE /api/clients/:id (Exclusão)
-router.delete('/:id', ClientController.deleteClient);
+// 2. Aplica o middleware 'protect' em TODAS as rotas de clientes
+router.get('/', protect, ClientController.getAllClients);         
+router.get('/:id', protect, ClientController.getClientById);     
+router.post('/', protect, ClientController.createClient);        
+router.put('/:id', protect, ClientController.updateClient);      
+router.delete('/:id', protect, ClientController.deleteClient);   
 
 module.exports = router;

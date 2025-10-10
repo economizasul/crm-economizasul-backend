@@ -1,23 +1,49 @@
-// routes/clientRoutes.js
+// controllers/ClientController.js
+// IMPORTANTE: Este código assume que você tem um arquivo '../config/db' que exporta o 'pool'
+const pool = require('../config/db'); 
 
-const express = require('express');
-const router = express.Router();
-const ClientController = require('../controllers/ClientController');
+// 1. Listar todos os clientes (GET /api/clients)
+const getAllClients = async (req, res) => {
+    try {
+        // A lógica SQL original da rota GET /clients
+        const result = await pool.query('SELECT * FROM clients');
+        res.status(200).json(result.rows);
+    } catch (error) {
+        console.error('Erro ao buscar clientes:', error);
+        res.status(500).json({ error: 'Erro interno ao buscar clientes.' });
+    }
+};
 
-// 1. IMPORTAÇÃO DO MIDDLEWARE (ADICIONAR NO TOPO)
-// Importa a função 'protect' do arquivo que acabamos de criar
-const { protect } = require('../middleware/authMiddleware'); 
+// 2. Buscar cliente por ID (GET /api/clients/:id)
+const getClientById = async (req, res) => {
+    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
+    res.status(501).json({ message: "Função 'getClientById' ainda não implementada." });
+};
 
-// ------------------------------------------------------------------
-// 2. APLICAÇÃO DO MIDDLEWARE NAS ROTAS
-// O 'protect' é inserido como o SEGUNDO argumento antes do Controller.
-// Se o token falhar, ele interrompe a requisição antes de chegar ao Controller.
-// ------------------------------------------------------------------
+// 3. Criar cliente (POST /api/clients)
+const createClient = async (req, res) => {
+    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
+    res.status(501).json({ message: "Função 'createClient' ainda não implementada." });
+};
 
-router.get('/', protect, ClientController.getAllClients);         // Listar Clientes
-router.get('/:id', protect, ClientController.getClientById);     // Buscar por ID
-router.post('/', protect, ClientController.createClient);        // Criar Cliente
-router.put('/:id', protect, ClientController.updateClient);      // Atualizar Cliente
-router.delete('/:id', protect, ClientController.deleteClient);   // Excluir Cliente
+// 4. Atualizar cliente (PUT /api/clients/:id)
+const updateClient = async (req, res) => {
+    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
+    res.status(501).json({ message: "Função 'updateClient' ainda não implementada." });
+};
 
-module.exports = router;
+// 5. Excluir cliente (DELETE /api/clients/:id)
+const deleteClient = async (req, res) => {
+    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
+    res.status(501).json({ message: "Função 'deleteClient' ainda não implementada." });
+};
+
+
+// ⚠️ CORREÇÃO CRUCIAL: Exportar todas as funções para que sejam carregadas corretamente pelo Express/Routes.
+module.exports = {
+    getAllClients,
+    getClientById,
+    createClient,
+    updateClient,
+    deleteClient,
+};
