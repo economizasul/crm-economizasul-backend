@@ -1,6 +1,6 @@
 // controllers/ClientController.js
 // IMPORTANTE: Este código assume que você tem um arquivo '../config/db' que exporta o 'pool'
-const pool = require('../config/db'); 
+const { pool } = require('../config/db'); 
 
 // 1. Listar todos os clientes (GET /api/clients)
 const getAllClients = async (req, res) => {
