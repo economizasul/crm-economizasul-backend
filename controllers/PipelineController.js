@@ -4,7 +4,7 @@ const Lead = require('../models/Lead');
 const Client = require('../models/Client');
 
 class PipelineController {
-    // 1. Lógica para Promover um Lead a Cliente (POST /api/pipeline/promote/:leadId)
+    // Lógica para Promover um Lead a Cliente (POST /api/pipeline/promote/:leadId)
     static async promoteToClient(req, res) {
         const { leadId } = req.params;
         
@@ -22,12 +22,11 @@ class PipelineController {
             }
 
             // 3. Cria um novo Cliente usando os dados do Lead
-            // Usamos o owner_id do Lead (que é o ID do vendedor)
             const newClient = await Client.create({
                 name: lead.name,
                 email: lead.email,
                 phone: lead.phone,
-                owner_id: lead.owner_id // Mantém o mesmo vendedor/proprietário
+                owner_id: lead.owner_id 
             });
 
             // 4. Atualiza o status do Lead para 'Convertido'

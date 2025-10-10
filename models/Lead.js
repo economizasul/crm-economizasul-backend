@@ -62,7 +62,7 @@ class Lead {
         }
     }
     
-    // 5. NOVO: Atualizar apenas o Status do Lead
+    // 5. Atualizar apenas o Status do Lead (Usado no Pipeline)
     static async updateStatus(id, newStatus) {
         try {
             const result = await pool.query(
