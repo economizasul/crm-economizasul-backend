@@ -5,12 +5,13 @@ require('dotenv').config();
 
 const express = require('express');
 const { ensureTablesExist } = require('./config/db'); 
+const { checkAndAddRoleColumn } = require('./config/migration'); // <<< IMPORTADO AQUI
 
 // IMPORTAÇÃO DE ROTAS (TODAS)
 const authRoutes = require('./routes/authRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const clientRoutes = require('./routes/clientRoutes');
-const pipelineRoutes = require('./routes/pipelineRoutes'); // Importação do Pipeline
+const pipelineRoutes = require('./routes/pipelineRoutes'); 
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -56,20 +57,24 @@ app.use('/api/auth', authRoutes);
 
 // Rotas de Dados (Protegidas)
 app.use('/api/clients', clientRoutes); 
-app.use('/api/leads', leadRoutes); // <<< ESSENCIAL: Onde a rota /api/leads é registrada
-app.use('/api/pipeline', pipelineRoutes); // ESSENCIAL: Onde a rota /api/pipeline é registrada
+app.use('/api/leads', leadRoutes); 
+app.use('/api/pipeline', pipelineRoutes); 
 
 // -----------------------------------------------------
 // 4. INICIA O SERVIDOR
 // -----------------------------------------------------
 
-// Primeiro, garante que as tabelas existem no banco, depois inicia o servidor
-ensureTablesExist().then(() => {
-    app.listen(port, () => {
-        console.log(`🚀 Servidor rodando em http://localhost:${port}`);
-    }).on('error', (err) => {
-        console.error('Erro ao iniciar o servidor:', err);
+// Primeiro, garante que as tabelas existem (ensureTablesExist), 
+// Depois garante a coluna 'role' (checkAndAddRoleColumn), 
+// E só então inicia o servidor.
+ensureTablesExist()
+    .then(checkAndAddRoleColumn) // <<< NOVA CHAMADA DE MIGRAÇÃO
+    .then(() => {
+        app.listen(port, () => {
+            console.log(`🚀 Servidor rodando em http://localhost:${port}`);
+        }).on('error', (err) => {
+            console.error('Erro ao iniciar o servidor:', err);
+        });
+    }).catch(err => {
+        console.error('Falha ao iniciar o aplicativo devido a erro de banco de dados/migração:', err);
     });
-}).catch(err => {
-    console.error('Falha ao iniciar o aplicativo devido a erro de banco de dados:', err);
-});
