@@ -1,7 +1,6 @@
 // config/db.js
 const { Pool } = require('pg');
 
-// A variável DATABASE_URL é lida do ambiente (Render) ou do arquivo .env (local)
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: {
@@ -9,9 +8,24 @@ const pool = new Pool({
   }
 });
 
-// Função para garantir que a tabela de clientes exista
+// Função para garantir que todas as tabelas existam (clients E users)
 async function ensureTablesExist() {
   try {
+    // 1. Cria Tabela de Usuários/Vendedores
+    const createUsersTableQuery = `
+      CREATE TABLE IF NOT EXISTS users (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        password VARCHAR(255) NOT NULL,
+        role VARCHAR(50) DEFAULT 'sales' NOT NULL, -- 'admin' ou 'sales'
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
+    `;
+    await pool.query(createUsersTableQuery);
+    console.log('Postgres: Tabela "users" verificada/criada com sucesso.');
+    
+    // 2. Cria Tabela de Clientes (Já existente)
     const createClientsTableQuery = `
       CREATE TABLE IF NOT EXISTS clients (
         id SERIAL PRIMARY KEY,
@@ -23,12 +37,12 @@ async function ensureTablesExist() {
     `;
     await pool.query(createClientsTableQuery);
     console.log('Postgres: Tabela "clients" verificada/criada com sucesso.');
+
   } catch (err) {
-    console.error('Postgres: ERRO ao verificar/criar a tabela clients:', err);
+    console.error('Postgres: ERRO ao verificar/criar tabelas:', err);
   }
 }
 
-// Exporta o pool de conexão para ser usado pelos models
 module.exports = {
   pool,
   ensureTablesExist,
