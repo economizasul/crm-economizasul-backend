@@ -1,49 +1,98 @@
 // controllers/ClientController.js
-// IMPORTANTE: Este código assume que você tem um arquivo '../config/db' que exporta o 'pool'
-const { pool } = require('../config/db'); 
 
-// 1. Listar todos os clientes (GET /api/clients)
-const getAllClients = async (req, res) => {
-    try {
-        // A lógica SQL original da rota GET /clients
-        const result = await pool.query('SELECT * FROM clients');
-        res.status(200).json(result.rows);
-    } catch (error) {
-        console.error('Erro ao buscar clientes:', error);
-        res.status(500).json({ error: 'Erro interno ao buscar clientes.' });
+const Client = require('../models/Client'); 
+
+class ClientController {
+    // 1. Criar Cliente (POST /api/clients)
+    static async createClient(req, res) {
+        const { name, email, phone } = req.body;
+        
+        // ⚠️ owner_id temporário: 
+        // Usamos o ID 1, garantido no db.js, até implementarmos a leitura do token.
+        const owner_id = 1; 
+
+        if (!name) {
+            return res.status(400).json({ error: "O nome do cliente é obrigatório." });
+        }
+
+        try {
+            const newClient = await Client.create({ name, email, phone, owner_id });
+            res.status(201).json({ 
+                message: "Cliente criado com sucesso!", 
+                client: newClient 
+            });
+        } catch (error) {
+            console.error('Erro ao criar cliente:', error);
+            res.status(500).json({ error: 'Erro interno do servidor ao criar cliente.' });
+        }
     }
-};
 
-// 2. Buscar cliente por ID (GET /api/clients/:id)
-const getClientById = async (req, res) => {
-    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
-    res.status(501).json({ message: "Função 'getClientById' ainda não implementada." });
-};
+    // 2. Listar Todos os Clientes (GET /api/clients)
+    static async getAllClients(req, res) {
+        try {
+            const clients = await Client.findAll();
+            res.status(200).json(clients);
+        } catch (error) {
+            console.error('Erro ao listar clientes:', error);
+            res.status(500).json({ error: 'Erro interno do servidor ao buscar clientes.' });
+        }
+    }
 
-// 3. Criar cliente (POST /api/clients)
-const createClient = async (req, res) => {
-    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
-    res.status(501).json({ message: "Função 'createClient' ainda não implementada." });
-};
+    // 3. Buscar Cliente por ID (GET /api/clients/:id)
+    static async getClientById(req, res) {
+        const { id } = req.params;
+        try {
+            const client = await Client.findById(id);
 
-// 4. Atualizar cliente (PUT /api/clients/:id)
-const updateClient = async (req, res) => {
-    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
-    res.status(501).json({ message: "Função 'updateClient' ainda não implementada." });
-};
+            if (!client) {
+                return res.status(404).json({ error: "Cliente não encontrado." });
+            }
+            res.status(200).json(client);
+        } catch (error) {
+            console.error('Erro ao buscar cliente por ID:', error);
+            res.status(500).json({ error: 'Erro interno do servidor ao buscar cliente.' });
+        }
+    }
 
-// 5. Excluir cliente (DELETE /api/clients/:id)
-const deleteClient = async (req, res) => {
-    // Se você já tem a lógica implementada, mantenha-a. Se não, use o placeholder:
-    res.status(501).json({ message: "Função 'deleteClient' ainda não implementada." });
-};
+    // 4. Atualizar Cliente (PUT /api/clients/:id)
+    static async updateClient(req, res) {
+        const { id } = req.params;
+        const { name, email, phone } = req.body;
 
+        try {
+            const updatedClient = await Client.update(id, { name, email, phone });
 
-// ⚠️ CORREÇÃO CRUCIAL: Exportar todas as funções para que sejam carregadas corretamente pelo Express/Routes.
-module.exports = {
-    getAllClients,
-    getClientById,
-    createClient,
-    updateClient,
-    deleteClient,
-};
+            if (!updatedClient) {
+                return res.status(404).json({ error: "Cliente não encontrado." });
+            }
+
+            res.status(200).json({ 
+                message: "Cliente atualizado com sucesso!", 
+                client: updatedClient 
+            });
+        } catch (error) {
+            console.error('Erro ao atualizar cliente:', error);
+            res.status(500).json({ error: 'Erro interno do servidor ao atualizar cliente.' });
+        }
+    }
+
+    // 5. Excluir Cliente (DELETE /api/clients/:id)
+    static async deleteClient(req, res) {
+        const { id } = req.params;
+
+        try {
+            const wasDeleted = await Client.delete(id);
+
+            if (!wasDeleted) {
+                return res.status(404).json({ error: "Cliente não encontrado." });
+            }
+
+            res.status(200).json({ message: "Cliente excluído com sucesso." });
+        } catch (error) {
+            console.error('Erro ao excluir cliente:', error);
+            res.status(500).json({ error: 'Erro interno do servidor ao excluir cliente.' });
+        }
+    }
+}
+
+module.exports = ClientController;

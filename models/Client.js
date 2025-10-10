@@ -1,63 +1,76 @@
 // models/Client.js
-const { pool } = require('../config/db'); // Importa o pool de conexão que criamos
+
+const { pool } = require('../config/db');
 
 class Client {
-    // Método Estático para Criar um Novo Cliente no banco (JÁ EXISTENTE)
-    static async create({ name, email, phone }) {
-        const query = `
-            INSERT INTO clients (name, email, phone)
-            VALUES ($1, $2, $3)
-            RETURNING id, name, email, phone, created_at
-        `;
-        const values = [name, email, phone];
-        
+    // 1. Criar um novo cliente no banco de dados (CREATE)
+    static async create({ name, email, phone, owner_id }) {
         try {
-            const result = await pool.query(query, values);
+            const result = await pool.query(
+                `INSERT INTO clients (name, email, phone, owner_id)
+                 VALUES ($1, $2, $3, $4)
+                 RETURNING *`,
+                [name, email, phone, owner_id]
+            );
             return result.rows[0];
         } catch (error) {
-            throw new Error(`Erro ao criar cliente: ${error.message}`);
+            console.error('Erro no Client.create:', error);
+            throw new Error('Não foi possível criar o cliente.');
         }
     }
 
-    // Método Estático para Listar Todos os Clientes (JÁ EXISTENTE)
+    // 2. Buscar todos os clientes (READ ALL)
     static async findAll() {
-        const query = `
-            SELECT id, name, email, phone, created_at
-            FROM clients
-            ORDER BY created_at DESC;
-        `;
-        const result = await pool.query(query);
-        return result.rows;
+        try {
+            const result = await pool.query(`SELECT * FROM clients ORDER BY created_at DESC`);
+            return result.rows;
+        } catch (error) {
+            console.error('Erro no Client.findAll:', error);
+            throw new Error('Não foi possível buscar a lista de clientes.');
+        }
     }
-    
-    // NOVO: Método para Buscar Cliente por ID
+
+    // 3. Buscar cliente por ID (READ ONE)
     static async findById(id) {
-        const query = 'SELECT * FROM clients WHERE id = $1;';
-        const result = await pool.query(query, [id]);
-        return result.rows[0]; // Retorna o cliente ou undefined
+        try {
+            const result = await pool.query(`SELECT * FROM clients WHERE id = $1`, [id]);
+            return result.rows[0];
+        } catch (error) {
+            console.error('Erro no Client.findById:', error);
+            throw new Error('Não foi possível buscar o cliente.');
+        }
     }
 
-    // NOVO: Método para Atualizar um Cliente (Update)
+    // 4. Atualizar um cliente (UPDATE)
     static async update(id, { name, email, phone }) {
-        // Usa o operador COALESCE para atualizar o campo apenas se um novo valor for fornecido
-        const query = `
-            UPDATE clients
-            SET name = COALESCE($2, name),
-                email = COALESCE($3, email),
-                phone = COALESCE($4, phone)
-            WHERE id = $1
-            RETURNING *;
-        `;
-        const values = [id, name, email, phone];
-        const result = await pool.query(query, values);
-        return result.rows[0]; // Retorna o cliente atualizado
+        try {
+            const result = await pool.query(
+                `UPDATE clients
+                 SET name = $1, email = $2, phone = $3
+                 WHERE id = $4
+                 RETURNING *`,
+                [name, email, phone, id]
+            );
+
+            if (result.rows.length === 0) {
+                return null; 
+            }
+            return result.rows[0];
+        } catch (error) {
+            console.error('Erro no Client.update:', error);
+            throw new Error('Não foi possível atualizar o cliente.');
+        }
     }
 
-    // NOVO: Método para Deletar um Cliente
+    // 5. Excluir um cliente (DELETE)
     static async delete(id) {
-        const query = 'DELETE FROM clients WHERE id = $1 RETURNING id;';
-        const result = await pool.query(query, [id]);
-        return result.rows[0]; // Retorna o ID do cliente deletado
+        try {
+            const result = await pool.query(`DELETE FROM clients WHERE id = $1 RETURNING *`, [id]);
+            return result.rows.length > 0;
+        } catch (error) {
+            console.error('Erro no Client.delete:', error);
+            throw new Error('Não foi possível excluir o cliente.');
+        }
     }
 }
 
