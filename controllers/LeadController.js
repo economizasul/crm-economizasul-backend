@@ -13,7 +13,6 @@ class LeadController {
             return res.status(400).json({ error: "O nome do lead é obrigatório." });
         }
 
-        // Definindo status padrão se não for fornecido
         const leadStatus = status || 'Novo';
 
         try {
@@ -23,7 +22,7 @@ class LeadController {
                 phone, 
                 status: leadStatus, 
                 source, 
-                owner_id // USANDO O ID DO USUÁRIO AQUI
+                owner_id
             });
             res.status(201).json({ 
                 message: "Lead criado com sucesso!", 
@@ -36,12 +35,23 @@ class LeadController {
     }
 
     // 2. Listar Todos os Leads (GET /api/leads)
-    // Agora lista apenas leads do usuário logado
+    // Se for admin, lista todos. Se for usuário, lista apenas os seus.
     static async getAllLeads(req, res) {
-        const owner_id = req.user.id; // ID do usuário logado
+        const owner_id = req.user.id;
+        // Role (função) do usuário: 'admin' ou 'user'
+        const userRole = req.user.role; 
+
         try {
-            // Buscando leads APENAS para o ID do usuário logado
-            const leads = await Lead.findByOwner(owner_id);
+            let leads;
+            
+            if (userRole === 'admin') {
+                // Admin vê TODOS os leads
+                leads = await Lead.findAll(); 
+            } else {
+                // Usuário comum vê APENAS seus próprios leads
+                leads = await Lead.findByOwner(owner_id);
+            }
+
             res.status(200).json(leads);
         } catch (error) {
             console.error('Erro ao listar leads:', error);
@@ -49,9 +59,11 @@ class LeadController {
         }
     }
     
-    // 3. Buscar Lead por ID (GET /api/leads/:id) - Mantém a busca
+    // 3. Buscar Lead por ID (GET /api/leads/:id)
     static async getLeadById(req, res) {
         const { id } = req.params;
+        const userRole = req.user.role; 
+
         try {
             const lead = await Lead.findById(id);
 
@@ -59,8 +71,8 @@ class LeadController {
                 return res.status(404).json({ error: "Lead não encontrado." });
             }
 
-            // SEGURANÇA: Garante que o usuário só pode ver seus próprios leads
-            if (lead.owner_id !== req.user.id) {
+            // SEGURANÇA: Admin pode ver leads de todos. Usuário comum só vê os seus.
+            if (userRole !== 'admin' && lead.owner_id !== req.user.id) {
                 return res.status(403).json({ error: "Acesso negado." });
             }
 
@@ -72,20 +84,45 @@ class LeadController {
     }
 
     // 4. Atualizar Lead (PUT /api/leads/:id)
+    // Admin pode atualizar o owner_id (mover leads) e todos os outros campos.
     static async updateLead(req, res) {
         const { id } = req.params;
-        const owner_id = req.user.id; // ID do usuário logado
-        const { name, email, phone, status, source } = req.body;
+        const owner_id = req.user.id;
+        const userRole = req.user.role;
+        // new_owner_id é usado APENAS pelo Admin para transferir a posse
+        const { name, email, phone, status, source, new_owner_id } = req.body; 
         
         try {
-            // 1. Verifica se o Lead pertence ao usuário
             const existingLead = await Lead.findById(id);
-            if (!existingLead || existingLead.owner_id !== owner_id) {
-                return res.status(403).json({ error: "Acesso negado ou Lead não encontrado." });
+
+            if (!existingLead) {
+                return res.status(404).json({ error: "Lead não encontrado." });
             }
 
-            // 2. Atualiza
-            const updatedLead = await Lead.update(id, { name, email, phone, status, source });
+            // Se NÃO for Admin E o Lead não pertencer ao usuário logado, nega acesso
+            if (userRole !== 'admin' && existingLead.owner_id !== owner_id) {
+                return res.status(403).json({ error: "Acesso negado. Você não é o dono deste Lead." });
+            }
+
+            // Lógica de Propriedade (Owner ID):
+            // 1. Se for admin E new_owner_id foi fornecido, usa new_owner_id (transferência)
+            // 2. Caso contrário, mantém o owner_id atual do Lead
+            const final_owner_id = (userRole === 'admin' && new_owner_id) 
+                                   ? new_owner_id 
+                                   : existingLead.owner_id;
+
+
+            // Monta o objeto de atualização
+            const updateData = { 
+                name, 
+                email, 
+                phone, 
+                status, 
+                source, 
+                owner_id: final_owner_id // owner_id pode mudar se for admin
+            };
+
+            const updatedLead = await Lead.update(id, updateData);
 
             res.status(200).json({ 
                 message: "Lead atualizado com sucesso!", 
@@ -98,18 +135,24 @@ class LeadController {
     }
 
     // 5. Excluir Lead (DELETE /api/leads/:id)
+    // Admin pode excluir qualquer lead.
     static async deleteLead(req, res) {
         const { id } = req.params;
-        const owner_id = req.user.id; // ID do usuário logado
+        const owner_id = req.user.id;
+        const userRole = req.user.role;
 
         try {
-            // 1. Verifica se o Lead pertence ao usuário antes de excluir
             const existingLead = await Lead.findById(id);
-            if (!existingLead || existingLead.owner_id !== owner_id) {
-                return res.status(403).json({ error: "Acesso negado ou Lead não encontrado." });
+            
+            if (!existingLead) {
+                return res.status(404).json({ error: "Lead não encontrado." });
             }
             
-            // 2. Exclui
+            // Se NÃO for Admin E o Lead não pertencer ao usuário logado, nega acesso
+            if (userRole !== 'admin' && existingLead.owner_id !== owner_id) {
+                 return res.status(403).json({ error: "Acesso negado. Você não tem permissão para excluir este Lead." });
+            }
+            
             const wasDeleted = await Lead.delete(id);
 
             res.status(200).json({ message: "Lead excluído com sucesso." });

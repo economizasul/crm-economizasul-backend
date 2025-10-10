@@ -11,7 +11,7 @@ class Lead {
                 name VARCHAR(255) NOT NULL,
                 email VARCHAR(255) UNIQUE,
                 phone VARCHAR(20),
-                status VARCHAR(50) DEFAULT 'Novo', -- Novo, Em Contato, Qualificado, Convertido, Perdido
+                status VARCHAR(50) DEFAULT 'Novo', 
                 source VARCHAR(100),
                 owner_id INTEGER REFERENCES users(id) ON DELETE CASCADE,
                 created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -43,7 +43,22 @@ class Lead {
         }
     }
 
-    // 3. Busca todos os Leads (AGORA FILTRANDO PELO DONO)
+    // 3. Busca TODOS os Leads (Usado pelo Admin)
+    static async findAll() {
+        const query = `
+            SELECT * FROM leads ORDER BY created_at DESC;
+        `;
+        try {
+            const result = await pool.query(query);
+            return result.rows;
+        } catch (error) {
+            console.error('Erro no modelo ao buscar TODOS os leads:', error);
+            throw error;
+        }
+    }
+
+
+    // 4. Busca todos os Leads de um Dono Específico (Usado pelo User Padrão)
     static async findByOwner(ownerId) {
         const query = `
             SELECT * FROM leads WHERE owner_id = $1 ORDER BY created_at DESC;
@@ -57,7 +72,7 @@ class Lead {
         }
     }
     
-    // 4. Busca Lead por ID
+    // 5. Busca Lead por ID
     static async findById(id) {
         const query = 'SELECT * FROM leads WHERE id = $1';
         try {
@@ -69,15 +84,16 @@ class Lead {
         }
     }
 
-    // 5. Atualiza Lead
-    static async update(id, { name, email, phone, status, source }) {
+    // 6. Atualiza Lead (agora aceita owner_id para o Admin)
+    static async update(id, { name, email, phone, status, source, owner_id }) {
         const query = `
             UPDATE leads
-            SET name = $1, email = $2, phone = $3, status = $4, source = $5, updated_at = CURRENT_TIMESTAMP
-            WHERE id = $6
+            SET name = $1, email = $2, phone = $3, status = $4, source = $5, owner_id = $6, updated_at = CURRENT_TIMESTAMP
+            WHERE id = $7
             RETURNING *;
         `;
-        const values = [name, email, phone, status, source, id];
+        // owner_id é o novo dono (se for admin) ou o dono existente.
+        const values = [name, email, phone, status, source, owner_id, id];
         try {
             const result = await pool.query(query, values);
             return result.rows[0] || null;
@@ -87,7 +103,7 @@ class Lead {
         }
     }
 
-    // 6. Atualiza APENAS o status (usado no pipeline)
+    // 7. Atualiza APENAS o status (usado no pipeline)
     static async updateStatus(id, newStatus) {
         const query = `
             UPDATE leads
@@ -105,7 +121,7 @@ class Lead {
         }
     }
 
-    // 7. Exclui Lead
+    // 8. Exclui Lead
     static async delete(id) {
         const query = 'DELETE FROM leads WHERE id = $1 RETURNING *;';
         try {
