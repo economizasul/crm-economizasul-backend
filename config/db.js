@@ -1,19 +1,20 @@
-// config/db.js
+// config/db.js (DENTRO DA FUNÇÃO ensureTablesExist)
 
-const { Pool } = require('pg');
-
-const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: {
-    rejectUnauthorized: false
-  }
-}); // ⬅️ CORREÇÃO 1: Faltava o fechamento do objeto e do construtor da Pool
-
-// config/db.js (Dentro da função ensureTablesExist)
+const bcrypt = require('bcryptjs');
 
 const ensureTablesExist = async () => {
     try {
-        // 1. Tabela 'users' (necessária para login)
+        // ... (Comandos DROP e CREATE para users, clients e leads)
+
+        // Comando DROP para Leads (mantido para garantir a coluna owner_id)
+        await pool.query(`DROP TABLE IF EXISTS leads CASCADE;`); // Adicione CASCADE para limpar dependências
+        // Comando DROP para Clients (adicionamos para garantir FOREIGN KEY)
+        await pool.query(`DROP TABLE IF EXISTS clients CASCADE;`);
+        // Comando DROP para Users (adicionamos para garantir FOREIGN KEY)
+        await pool.query(`DROP TABLE IF EXISTS users CASCADE;`);
+
+
+        // 1. Tabela 'users'
         await pool.query(`
             CREATE TABLE IF NOT EXISTS users (
                 id SERIAL PRIMARY KEY,
@@ -24,7 +25,8 @@ const ensureTablesExist = async () => {
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `);
-        // 2. Tabela 'clients' (para clientes ativos)
+        
+        // 2. Tabela 'clients'
         await pool.query(`
             CREATE TABLE IF NOT EXISTS clients (
                 id SERIAL PRIMARY KEY,
@@ -34,9 +36,8 @@ const ensureTablesExist = async () => {
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `);
-        // 3. 🆕 NOVA TABELA: 'leads' (para prospects e oportunidades)
-        await pool.query(`DROP TABLE IF EXISTS leads;`); 
-
+        
+        // 3. Tabela 'leads'
         await pool.query(`
             CREATE TABLE IF NOT EXISTS leads (
                 id SERIAL PRIMARY KEY,
@@ -49,17 +50,31 @@ const ensureTablesExist = async () => {
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
         `);
-        console.log("Tabelas 'users', 'clients', e 'leads' verificadas/criadas com sucesso.");
+
+
+        const checkUser = await pool.query(`SELECT id FROM users WHERE email = $1`, ['admin@economizasul.com']);
+        
+        if (checkUser.rows.length === 0) {
+
+            const salt = await bcrypt.genSalt(10);
+            const hashedPassword = await bcrypt.hash('SenhaSegura123', salt);
+            
+            await pool.query(
+                `INSERT INTO users (id, name, email, password, role)
+                 VALUES (1, 'Admin Padrão', 'admin@economizasul.com', $1, 'admin')
+                 ON CONFLICT (id) DO NOTHING`, 
+                 [hashedPassword]
+            );
+            await pool.query(`SELECT setval('users_id_seq', (SELECT MAX(id) FROM users));`);
+            
+            console.log("✅ Usuário admin@economizasul.com garantido (ID 1).");
+        }
+
+
+        console.log("Tabelas (users, clients, leads) verificadas/criadas com sucesso.");
     } catch (err) {
         console.error("ERRO FATAL: Não foi possível criar ou verificar as tabelas.", err);
         throw err; 
     }
 };
 
-// ... o restante do db.js com a exportação (module.exports = { pool, ensureTablesExist };)
-
-
-module.exports = {
-  pool,
-  ensureTablesExist, // ⬅️ CORREÇÃO 2: A função agora está definida e é exportada
-};
