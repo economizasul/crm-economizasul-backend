@@ -5,7 +5,7 @@ require('dotenv').config();
 
 const express = require('express');
 const { ensureTablesExist } = require('./config/db'); // Importa a função de verificação do banco
-
+const clientRoutes = require('./routes/clientRoutes');
 const app = express();
 const port = process.env.PORT || 3000;
 
