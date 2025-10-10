@@ -1,57 +1,35 @@
-// app.js - O Coração do Servidor
+// config/db.js
+const { Pool } = require('pg');
 
-// 1. Carrega variáveis de ambiente
-require('dotenv').config(); 
+// A variável DATABASE_URL é lida do ambiente (Render) ou do arquivo .env (local)
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: {
+    rejectUnauthorized: false
+  }
+});
 
-const express = require('express');
-const { ensureTablesExist } = require('./config/db'); // Importa a função de verificação do banco
-
-const app = express();
-const port = process.env.PORT || 3000;
-
-// -----------------------------------------------------
-// 2. MIDDLEWARE (Configurações Globais)
-// -----------------------------------------------------
-
-// Permite que o servidor entenda requisições com corpo JSON (essencial para API)
-app.use(express.json());
-
-// -----------------------------------------------------
-// 3. ROTAS DA API
-// -----------------------------------------------------
-
-// Rota de teste simples (a mesma que já está no Render, agora limpa)
-app.get('/', (req, res) => {
-    const htmlContent = `
-        <!DOCTYPE html>
-        <html>
-        <head>
-            <title>CRM Economiza Sul: Estrutura Pronta!</title>
-        </head>
-        <body>
-            <h1>CRM Economiza Sul: Estrutura Pronta!</h1>
-            <p>O servidor está no ar. A lógica de conexão com o banco foi movida para config/db.js.</p>
-            <p>Próximo passo: Criar a API de Clientes em /routes/clients.js</p>
-        </body>
-        </html>
+// Função para garantir que a tabela de clientes exista
+async function ensureTablesExist() {
+  try {
+    const createClientsTableQuery = `
+      CREATE TABLE IF NOT EXISTS clients (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        email VARCHAR(100) UNIQUE NOT NULL,
+        phone VARCHAR(50),
+        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+      );
     `;
-    res.send(htmlContent);
-});
+    await pool.query(createClientsTableQuery);
+    console.log('Postgres: Tabela "clients" verificada/criada com sucesso.');
+  } catch (err) {
+    console.error('Postgres: ERRO ao verificar/criar a tabela clients:', err);
+  }
+}
 
-// FUTURAMENTE:
-// app.use('/api/clients', clientRoutes);
-// app.use('/api/leads', leadRoutes);
-
-
-// -----------------------------------------------------
-// 4. INICIA O SERVIDOR
-// -----------------------------------------------------
-
-// Primeiro, garante que as tabelas existem no banco, depois inicia o servidor
-ensureTablesExist().then(() => {
-    app.listen(port, () => {
-        console.log(`Servidor Node.js rodando na porta ${port}`);
-    });
-}).catch(err => {
-    console.error("ERRO FATAL: Não foi possível iniciar o servidor após a verificação do banco.", err);
-});
+// Exporta o pool de conexão para ser usado pelos models
+module.exports = {
+  pool,
+  ensureTablesExist,
+};
