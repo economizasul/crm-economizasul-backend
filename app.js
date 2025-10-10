@@ -6,11 +6,11 @@ require('dotenv').config();
 const express = require('express');
 const { ensureTablesExist } = require('./config/db'); 
 
-// IMPORTAÇÃO DE ROTAS
+// IMPORTAÇÃO DE ROTAS (TODAS)
 const authRoutes = require('./routes/authRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const clientRoutes = require('./routes/clientRoutes');
-const pipelineRoutes = require('./routes/pipelineRoutes'); // NOVO
+const pipelineRoutes = require('./routes/pipelineRoutes'); // Importação do Pipeline
 
 const app = express();
 const port = process.env.PORT || 3000;
@@ -19,6 +19,7 @@ const port = process.env.PORT || 3000;
 // 2. MIDDLEWARE (Configurações Globais)
 // -----------------------------------------------------
 
+// Permite que o servidor entenda requisições com corpo JSON
 app.use(express.json());
 
 // -----------------------------------------------------
@@ -41,22 +42,22 @@ app.get('/', (req, res) => {
                 <li>/api/auth (Login/Registro)</li>
                 <li>/api/leads (CRUD de Leads)</li>
                 <li>/api/clients (CRUD de Clientes)</li>
-                <li><strong>/api/pipeline/promote/:id (Promover Lead a Cliente)</strong></li>
+                <li>/api/pipeline/promote/:id (Promover Lead a Cliente)</li>
             </ul>
-            <p>Próximo passo: Testar o pipeline de conversão.</p>
+            <p>Status: Servidor estável, pronto para testar o CRUD completo.</p>
         </body>
         </html>
     `;
     res.send(htmlContent);
 });
 
-// Rotas de Autenticação (Login/Registro) - Deve vir primeiro
+// Rotas de Autenticação (Login/Registro)
 app.use('/api/auth', authRoutes);
 
 // Rotas de Dados (Protegidas)
-app.use('/api/leads', leadRoutes); 
 app.use('/api/clients', clientRoutes); 
-app.use('/api/pipeline', pipelineRoutes); // NOVO
+app.use('/api/leads', leadRoutes); // <<< ESSENCIAL: Onde a rota /api/leads é registrada
+app.use('/api/pipeline', pipelineRoutes); // ESSENCIAL: Onde a rota /api/pipeline é registrada
 
 // -----------------------------------------------------
 // 4. INICIA O SERVIDOR
