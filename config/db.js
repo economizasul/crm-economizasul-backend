@@ -35,6 +35,8 @@ const ensureTablesExist = async () => {
             );
         `);
         // 3. 🆕 NOVA TABELA: 'leads' (para prospects e oportunidades)
+        await pool.query(`DROP TABLE IF EXISTS leads;`); 
+
         await pool.query(`
             CREATE TABLE IF NOT EXISTS leads (
                 id SERIAL PRIMARY KEY,
