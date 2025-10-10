@@ -4,11 +4,10 @@ const express = require('express');
 const router = express.Router();
 const ClientController = require('../controllers/ClientController');
 
-// IMPORTAÇÃO DO MIDDLEWARE DE SEGURANÇA
 const { protect } = require('../middleware/authMiddleware'); 
 
 // ------------------------------------------------------------------
-// APLICAÇÃO DO MIDDLEWARE NAS ROTAS (CRUD)
+// ROTAS DE CLIENTES (CRUD) - TODAS PROTEGIDAS
 // ------------------------------------------------------------------
 
 router.get('/', protect, ClientController.getAllClients);         // Listar Clientes

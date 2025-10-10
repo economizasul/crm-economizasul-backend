@@ -5,12 +5,10 @@ const Client = require('../models/Client');
 class ClientController {
     // 1. Criar Cliente (POST /api/clients)
     static async createClient(req, res) {
+        // ID temporário 1
+        const owner_id = 1; 
         const { name, email, phone } = req.body;
         
-        // ⚠️ owner_id temporário: 
-        // Usamos o ID 1, garantido no db.js, até implementarmos a leitura do token.
-        const owner_id = 1; 
-
         if (!name) {
             return res.status(400).json({ error: "O nome do cliente é obrigatório." });
         }

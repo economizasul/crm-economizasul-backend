@@ -10,7 +10,7 @@ const { protect } = require('../middleware/authMiddleware');
 // ------------------------------------------------------------------
 
 router.get('/', protect, LeadController.getAllLeads);         // Listar Todos os Leads
-router.get('/:id', protect, LeadController.getLeadById);     // ROTA CORRIGIDA PARA BUSCAR POR ID
+router.get('/:id', protect, LeadController.getLeadById);     // Busca por ID (Corrigido)
 router.post('/', protect, LeadController.createLead);        // Criar Novo Lead
 router.put('/:id', protect, LeadController.updateLead);      // Atualizar Lead
 router.delete('/:id', protect, LeadController.deleteLead);   // Excluir Lead
