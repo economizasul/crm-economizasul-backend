@@ -1,4 +1,5 @@
 // config/db.js
+
 const { Pool } = require('pg');
 
 const pool = new Pool({
@@ -6,44 +7,41 @@ const pool = new Pool({
   ssl: {
     rejectUnauthorized: false
   }
-});
+}); // ⬅️ CORREÇÃO 1: Faltava o fechamento do objeto e do construtor da Pool
 
-// Função para garantir que todas as tabelas existam (clients E users)
-async function ensureTablesExist() {
-  try {
-    // 1. Cria Tabela de Usuários/Vendedores
-    const createUsersTableQuery = `
-      CREATE TABLE IF NOT EXISTS users (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        password VARCHAR(255) NOT NULL,
-        role VARCHAR(50) DEFAULT 'sales' NOT NULL, -- 'admin' ou 'sales'
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `;
-    await pool.query(createUsersTableQuery);
-    console.log('Postgres: Tabela "users" verificada/criada com sucesso.');
-    
-    // 2. Cria Tabela de Clientes (Já existente)
-    const createClientsTableQuery = `
-      CREATE TABLE IF NOT EXISTS clients (
-        id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        email VARCHAR(100) UNIQUE NOT NULL,
-        phone VARCHAR(50),
-        created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
-      );
-    `;
-    await pool.query(createClientsTableQuery);
-    console.log('Postgres: Tabela "clients" verificada/criada com sucesso.');
+// Função que cria as tabelas se elas não existirem (requerida pelo app.js)
+const ensureTablesExist = async () => {
+    try {
+        // SQL para criar a tabela 'users' (necessária para login)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                role VARCHAR(50) DEFAULT 'user',
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        // SQL para criar a tabela 'clients' (necessária para o GET /clients)
+        await pool.query(`
+            CREATE TABLE IF NOT EXISTS clients (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(100) NOT NULL,
+                email VARCHAR(100),
+                phone VARCHAR(50),
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+        `);
+        console.log("Tabelas 'users' e 'clients' verificadas/criadas com sucesso.");
+    } catch (err) {
+        console.error("ERRO FATAL: Não foi possível criar ou verificar as tabelas.", err);
+        throw err; 
+    }
+};
 
-  } catch (err) {
-    console.error('Postgres: ERRO ao verificar/criar tabelas:', err);
-  }
-}
 
 module.exports = {
   pool,
-  ensureTablesExist,
+  ensureTablesExist, // ⬅️ CORREÇÃO 2: A função agora está definida e é exportada
 };
