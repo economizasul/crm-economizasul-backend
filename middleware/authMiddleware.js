@@ -27,7 +27,6 @@ const protect = async (req, res, next) => {
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             
             // 3. Busca o usuário no DB pelo ID contido no token
-            // Se o usuário ID 2 realmente existe no banco, esta linha deve funcionar.
             const user = await findUserById(decoded.userId);
 
             if (!user) {
