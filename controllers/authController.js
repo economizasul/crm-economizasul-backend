@@ -69,9 +69,14 @@ const loginUser = async (req, res) => {
     }
 
     try {
-        // CORREÇÃO CRÍTICA: Deve-se selecionar explicitamente a coluna 'password' para comparação.
+        // Seleciona explicitamente a coluna 'password'
         const result = await pool.query('SELECT id, name, email, role, password FROM users WHERE email = $1', [email]);
         const user = result.rows[0];
+
+        // === LINHA DE DEBUG CRÍTICA ===
+        // Isso irá mostrar se o banco de dados retornou o usuário e a senha hashed.
+        console.log("Usuário encontrado no login:", user);
+        // ===============================
 
         // 2. Verificar se o usuário existe e se a senha corresponde
         if (user && await bcrypt.compare(password, user.password)) {
@@ -89,8 +94,8 @@ const loginUser = async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Erro no login:", error.message);
-        // Retorna um erro 500 para o usuário, mas loga o erro completo no console do servidor
+        // Loga o erro exato que causou o 500 no servidor (ex: "Cannot read property 'password' of undefined")
+        console.error("Erro no login (Revisar dados do DB):", error.message);
         res.status(500).json({ error: 'Erro interno do servidor ao fazer login.' });
     }
 };
