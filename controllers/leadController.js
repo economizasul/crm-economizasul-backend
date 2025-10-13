@@ -1,6 +1,6 @@
 // controllers/leadController.js
 
-const pool = require('../config/db');
+const { pool } = require('../config/db');
 
 // @desc    Cria um novo lead
 // @route   POST /api/leads
