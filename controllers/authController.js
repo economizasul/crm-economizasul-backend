@@ -1,7 +1,7 @@
 // controllers/authController.js
 
 const pool = require('../config/db');
-const bcrypt = require('bcryptjs');
+const bcrypt = require('bcryptjs'); // Confirme que é 'bcryptjs' e não 'bcrypt'
 const jwt = require('jsonwebtoken');
 
 // Função auxiliar para gerar JWT
@@ -29,9 +29,15 @@ const registerUser = async (req, res) => {
             return res.status(400).json({ error: 'Usuário já existe.' });
         }
 
-        // 2. Hash da senha
+        // === DEBUG: Loga antes de chamar o bcrypt ===
+        console.log(`Tentando hashear senha para o email: ${email}`);
+        
+        // 2. Hash da senha - SE O ERRO 500 ESTIVER AQUI, O SERVER TRAVA
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
+
+        // === DEBUG: Loga se o hash deu certo ===
+        console.log(`Hash gerado com sucesso.`);
 
         // 3. Inserir novo usuário no banco de dados
         const newUser = await pool.query(
@@ -53,7 +59,8 @@ const registerUser = async (req, res) => {
         }
 
     } catch (error) {
-        console.error("Erro no registro:", error.message);
+        // Loga o erro exato que causou o 500 no servidor (ex: erro no bcrypt)
+        console.error("Erro CRÍTICO no registro (authController):", error.message);
         res.status(500).json({ error: 'Erro interno do servidor ao registrar.' });
     }
 };
@@ -74,7 +81,6 @@ const loginUser = async (req, res) => {
         const user = result.rows[0];
 
         // === LINHA DE DEBUG CRÍTICA ===
-        // Isso irá mostrar se o banco de dados retornou o usuário e a senha hashed.
         console.log("Usuário encontrado no login:", user);
         // ===============================
 
@@ -95,7 +101,7 @@ const loginUser = async (req, res) => {
 
     } catch (error) {
         // Loga o erro exato que causou o 500 no servidor (ex: "Cannot read property 'password' of undefined")
-        console.error("Erro no login (Revisar dados do DB):", error.message);
+        console.error("Erro CRÍTICO no login (authController):", error.message);
         res.status(500).json({ error: 'Erro interno do servidor ao fazer login.' });
     }
 };
