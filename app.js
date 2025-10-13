@@ -1,74 +1,57 @@
 const express = require('express');
-const cors = require('cors');
+const cors = require('cors'); // Pacote para resolver o problema de conexão
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/authRoutes');
 const clientRoutes = require('./routes/clientRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const pipelineRoutes = require('./routes/pipelineRoutes');
+
+// Importa e configura o dotenv (deve ser o primeiro para carregar variáveis)
 require('dotenv').config();
 
 const app = express();
 
-// --- CONFIGURAÇÃO DE SEGURANÇA E MIDDLEWARES ---
+// --- Configuração de Middlewares ---
 
-// 1. Configuração do CORS
-// Permitir conexões do localhost (para desenvolvimento) e da URL de produção.
-const allowedOrigins = [
-    'http://localhost:5173', // O seu frontend VITE
-    'https://crm-app-cntt7.onrender.com', // Exemplo de URL de produção futura (se hospedar o frontend no Render)
-];
-
-const corsOptions = {
-    origin: function (origin, callback) {
-        // Permitir requisições sem origem (como apps mobile ou curl)
-        if (!origin) return callback(null, true); 
-        
-        // Se a origem estiver na lista de permitidos ou for localhost, permitir
-        if (allowedOrigins.indexOf(origin) !== -1 || origin.includes('localhost')) {
-            callback(null, true);
-        } else {
-            // Bloquear a requisição
-            callback(new Error('Not allowed by CORS'), false);
-        }
-    },
+// 1. Configuração de CORS (Essencial para comunicação local/Render)
+// O 'origin: *' permite que qualquer frontend (incluindo localhost:5173) se conecte.
+app.use(cors({
+    origin: '*', 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
-    optionsSuccessStatus: 204
-};
+}));
 
-app.use(cors(corsOptions));
-
-// 2. Proteção de Cabeçalhos HTTP
+// 2. Segurança (Helmet)
 app.use(helmet());
 
-// 3. Limite de requisições (para proteção contra ataques de força bruta)
+// 3. Limite de requisições (Prevenção contra ataques)
 const limiter = rateLimit({
     windowMs: 15 * 60 * 1000, // 15 minutos
-    max: 100, // Limite de 100 requisições por IP
+    max: 100, // Limita cada IP a 100 requisições por janela
     standardHeaders: true,
     legacyHeaders: false,
 });
 app.use(limiter);
 
-// 4. Body Parser (para receber JSON nas requisições)
+// 4. Body Parser (para aceitar JSON)
 app.use(express.json());
 
-// --- ROTAS DA API ---
+// --- Rotas ---
 
-app.get('/api', (req, res) => {
-    res.send('API CRM está online.');
+// Rota de teste simples
+app.get('/', (req, res) => {
+    res.send('CRM Backend API is running!');
 });
 
+// Rotas da aplicação
 app.use('/api/auth', authRoutes);
 app.use('/api/clients', clientRoutes);
 app.use('/api/leads', leadRoutes);
-app.use('/api/pipeline', pipelineRoutes);
+app.use('/api/pipelines', pipelineRoutes);
 
-// --- INÍCIO DO SERVIDOR ---
 
+// --- Inicialização do Servidor ---
+// O Render define a porta automaticamente na variável de ambiente PORT
 const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
