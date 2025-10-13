@@ -2,17 +2,24 @@
 
 const express = require('express');
 const router = express.Router();
-const LeadController = require('../controllers/LeadController');
-const { protect } = require('../middleware/authMiddleware'); 
+const leadController = require('../controllers/leadController');
+const { protect, admin } = require('../middleware/authMiddleware');
 
-// ------------------------------------------------------------------
-// ROTAS DE LEADS (CRUD) - TODAS PROTEGIDAS
-// ------------------------------------------------------------------
+// Rotas de Leads - CRUD
 
-router.get('/', protect, LeadController.getAllLeads);         // Listar Todos os Leads
-router.get('/:id', protect, LeadController.getLeadById);     // Busca por ID
-router.post('/', protect, LeadController.createLead);        // Criar Novo Lead
-router.put('/:id', protect, LeadController.updateLead);      // Atualizar Lead
-router.delete('/:id', protect, LeadController.deleteLead);   // Excluir Lead
+// POST /api/leads - Cria um novo lead (apenas usuário logado)
+router.post('/', protect, leadController.createLead);
+
+// GET /api/leads - Lista leads (Admin vê todos, User vê apenas os seus)
+router.get('/', protect, leadController.getAllLeads);
+
+// GET /api/leads/:id - Detalhes de um lead
+router.get('/:id', protect, leadController.getLeadById);
+
+// PUT /api/leads/:id - Atualiza um lead (apenas Admin, ou User que é owner)
+router.put('/:id', protect, leadController.updateLead);
+
+// DELETE /api/leads/:id - Deleta um lead (apenas Admin)
+router.delete('/:id', protect, admin, leadController.deleteLead);
 
 module.exports = router;
