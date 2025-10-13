@@ -1,83 +1,72 @@
-// controllers/AuthController.js
-const User = require('../models/User'); // Importa o Modelo de Usuário
-const jwt = require('jsonwebtoken'); // Importa o JWT para criar tokens
-// O dotenv será usado para ler a chave secreta que vamos configurar
-require('dotenv').config(); 
+// Middleware de Autenticação e Autorização
 
-// Chave Secreta para gerar o token. Lida da variável de ambiente!
-const JWT_SECRET = process.env.JWT_SECRET || 'fallback_secret_key_nao_usar_em_prod';
+const jwt = require('jsonwebtoken');
+const pool = require('../config/db'); 
 
-class AuthController {
-    // 1. Lógica para Registrar um Novo Vendedor/Admin (POST /api/auth/register)
-    static async register(req, res) {
-        const { name, email, password, role } = req.body;
+// Função auxiliar para buscar usuário no DB
+const findUserById = async (id) => {
+    try {
+        // ESSENCIAL: Converte o ID para Integer (número inteiro) para garantir
+        // que o PostgreSQL encontre a correspondência correta, eliminando erros de tipagem (string vs number).
+        const userIdInt = parseInt(id, 10);
         
-        // Validação básica
-        if (!name || !email || !password) {
-            return res.status(400).json({ error: "Nome, e-mail e senha são obrigatórios." });
-        }
+        // Busca o usuário pelo ID
+        const result = await pool.query('SELECT id, role FROM users WHERE id = $1', [userIdInt]);
+        return result.rows[0]; 
+    } catch (error) {
+        console.error("Erro ao buscar usuário no banco de dados:", error.message);
+        return null;
+    }
+};
 
+const protect = async (req, res, next) => {
+    let token;
+
+    // 1. Verifica se o header Authorization existe e se começa com 'Bearer'
+    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
         try {
-            const newUser = await User.create({ name, email, password, role });
+            // Extrai o token, removendo 'Bearer '
+            token = req.headers.authorization.split(' ')[1];
+
+            // 2. Decodifica o token usando a chave secreta
+            const decoded = jwt.verify(token, process.env.JWT_SECRET);
             
-            // Cria o token de autenticação (JWT) que o vendedor usará para acessar a API
-            const token = jwt.sign(
-                { userId: newUser.id, role: newUser.role }, 
-                JWT_SECRET, 
-                { expiresIn: '1d' } // Token expira em 1 dia
-            );
+            // 3. Busca o usuário no DB pelo ID usando a chave 'userId' do token
+            // A chave 'userId' foi verificada no authController.js e está correta.
+            const user = await findUserById(decoded.userId);
 
-            // Resposta de sucesso
-            res.status(201).json({
-                message: "Usuário registrado com sucesso!",
-                token,
-                user: { id: newUser.id, name: newUser.name, email: newUser.email, role: newUser.role }
-            });
-
-        } catch (error) {
-            console.error('Erro no controller ao registrar usuário:', error);
-            res.status(400).json({ error: error.message });
-        }
-    }
-
-    // 2. Lógica para Login (POST /api/auth/login)
-    static async login(req, res) {
-        const { email, password } = req.body;
-        
-        try {
-            const user = await User.findByEmail(email);
-
-            // 1. Verifica se o usuário existe
             if (!user) {
-                return res.status(401).json({ error: "Credenciais inválidas." });
+                // Se a busca falhar ou retornar null
+                return res.status(401).json({ error: "Não autorizado, usuário não encontrado." });
             }
 
-            // 2. Compara a senha (a senha do banco é criptografada)
-            const isMatch = await User.comparePassword(password, user.password);
-
-            if (!isMatch) {
-                return res.status(401).json({ error: "Credenciais inválidas." });
-            }
-
-            // 3. Cria o token de autenticação (JWT)
-            const token = jwt.sign(
-                { userId: user.id, role: user.role }, 
-                JWT_SECRET, 
-                { expiresIn: '1d' }
-            );
-
-            // Resposta de sucesso
-            res.status(200).json({
-                message: "Login bem-sucedido!",
-                token,
-                user: { id: user.id, name: user.name, email: user.email, role: user.role }
-            });
-
+            // Anexa o usuário logado ao objeto da requisição
+            req.user = user;
+            
+            // Continua
+            next();
         } catch (error) {
-            console.error('Erro no controller ao realizar login:', error);
-            res.status(500).json({ error: "Erro interno do servidor." });
+            // Captura erros de decodificação do JWT
+            console.error("Erro na autenticação:", error.message);
+            return res.status(401).json({ error: "Não autorizado, token inválido ou expirado." });
         }
     }
-}
 
-module.exports = AuthController;
+    if (!token) {
+        // Caso o token não tenha sido fornecido
+        return res.status(401).json({ error: "Não autorizado, token não encontrado no cabeçalho." });
+    }
+};
+
+/**
+ * Middleware para restringir o acesso apenas a usuários com a role 'Admin'.
+ */
+const admin = (req, res, next) => {
+    if (req.user && req.user.role === 'Admin') {
+        next();
+    } else {
+        return res.status(403).json({ error: "Não autorizado, requer permissão de Admin." });
+    }
+};
+
+module.exports = { protect, admin };
