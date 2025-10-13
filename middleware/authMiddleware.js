@@ -1,12 +1,12 @@
 // middleware/authMiddleware.js
 
 const jwt = require('jsonwebtoken');
-const { pool } = require('../config/db'); // CORREÇÃO: Importa { pool } desestruturado
+const { pool } = require('../config/db.js'); // CORREÇÃO: Desestruturação e extensão .js
 
 // Função auxiliar para buscar usuário no DB
 const findUserById = async (id) => {
     try {
-        // Correção de tipagem: converte ID (string do token) para Integer.
+        // CORREÇÃO: Converte o ID (string do token) para Integer.
         const userIdInt = parseInt(id, 10);
         
         const result = await pool.query('SELECT id, role FROM users WHERE id = $1', [userIdInt]);
@@ -25,6 +25,8 @@ const protect = async (req, res, next) => {
             token = req.headers.authorization.split(' ')[1];
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
             
+            // Note: O token pode ter a chave 'id' ou 'userId', dependendo de onde foi gerado.
+            // Aqui estamos assumindo que o token gerado em authController usa 'userId'.
             const user = await findUserById(decoded.userId); 
 
             if (!user) {
