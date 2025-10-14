@@ -177,20 +177,3 @@ class Lead {
 }
 
 module.exports = Lead;
-```eof
-
-### Resumo das Mudanças
-
-1.  **Remoção do `email`:** O Frontend não envia `email`, então ele foi removido das colunas e funções.
-2.  **Novas Colunas na Tabela:** Adicionamos as colunas **`document`**, **`address`**, **`origin`** e, o mais importante, **`metadata`** (`JSONB`).
-3.  **`JSONB` para Dados Complexos:** O campo **`metadata`** é usado para armazenar dados em formato JSON, como as anotações (`notes`), `uc`, `avgConsumption`, e `estimatedSavings`, simplificando a integração com o Frontend.
-4.  **Renomeação:** `owner_id` foi renomeado para **`seller_id`** em toda a classe para ser mais claro no contexto do CRM (e o método de busca foi renomeado para `findBySeller`).
-5.  **Ajuste nas Funções:** As funções `create` e `update` agora aceitam todos os novos campos enviados pelo Frontend e empacotam os dados complexos dentro do `metadata` antes de salvar.
-
----
-
-### Próximo Passo: Controller e Rotas
-
-Com o modelo de dados pronto para PostgreSQL, precisamos criar o **Controller** e as **Rotas** para executar as funções `create` (POST) e `findAll`/`findBySeller` (GET).
-
-**Vamos criar o `LeadController.js` para processar as requisições?**
