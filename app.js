@@ -6,14 +6,12 @@ const authRoutes = require('./routes/authRoutes');
 const clientRoutes = require('./routes/clientRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const pipelineRoutes = require('./routes/pipelineRoutes');
-
 // Importa e configura o dotenv (deve ser o primeiro para carregar variáveis)
 require('dotenv').config();
 
 const app = express();
 
 // --- Configuração de Middlewares ---
-
 // 1. Configuração de CORS (Essencial para comunicação local/Render)
 // O 'origin: *' permite que qualquer frontend (incluindo localhost:5173) se conecte.
 app.use(cors({
@@ -38,18 +36,21 @@ app.use(limiter);
 app.use(express.json());
 
 // --- Rotas ---
-
 // Rota de teste simples
 app.get('/', (req, res) => {
     res.send('CRM Backend API is running!');
 });
 
 // Rotas da aplicação
-app.use('/api/auth', authRoutes);
+
+// <<<<<<<< CORREÇÃO AQUI >>>>>>>>
+// O prefixo foi alterado de '/api/auth' para '/api/v1/auth'
+app.use('/api/v1/auth', authRoutes); 
+// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
+
 app.use('/api/clients', clientRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/pipelines', pipelineRoutes);
-
 
 // --- Inicialização do Servidor ---
 // O Render define a porta automaticamente na variável de ambiente PORT
