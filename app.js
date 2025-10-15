@@ -46,8 +46,6 @@ app.get('/', (req, res) => {
 // <<<<<<<< CORREÇÃO AQUI >>>>>>>>
 // O prefixo foi alterado de '/api/auth' para '/api/v1/auth'
 app.use('/api/v1/auth', authRoutes); 
-// <<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<<
-
 app.use('/api/clients', clientRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/pipelines', pipelineRoutes);
