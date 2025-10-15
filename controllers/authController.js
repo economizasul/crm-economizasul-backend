@@ -1,8 +1,9 @@
 // controllers/authController.js
 
-const { pool } = require('../config/db.js'); // CORREÇÃO: Usando a desestruturação e a extensão .js
+const { pool } = require('../config/db'); // CORREÇÃO: Usando a desestruturação e a extensão .js
 const bcrypt = require('bcryptjs'); 
 const jwt = require('jsonwebtoken');
+const User = require('../models/User');
 
 // Função auxiliar para gerar JWT
 const generateToken = (userId) => {
