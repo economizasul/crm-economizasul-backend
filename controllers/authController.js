@@ -1,9 +1,13 @@
 // controllers/authController.js
 
-const { pool } = require('../config/db'); // CORREÇÃO: Usando a desestruturação e a extensão .js
+// CORREÇÃO: Removido o '.js' do require de 'db'
+const { pool } = require('../config/db'); 
 const bcrypt = require('bcryptjs'); 
 const jwt = require('jsonwebtoken');
-const User = require('../models/User');
+
+// Adicionando o Model (embora você use pool.query, é bom ter o Model se ele existir)
+// Se você não usa Mongoose/Sequelize e usa apenas pg, esta linha não é necessária
+// const User = require('../models/User'); 
 
 // Função auxiliar para gerar JWT
 const generateToken = (userId) => {
@@ -13,7 +17,7 @@ const generateToken = (userId) => {
 };
 
 // @desc    Registrar novo usuário
-// @route   POST /api/auth/register
+// @route   POST /api/v1/auth/register
 // @access  Public
 const registerUser = async (req, res) => {
     const { name, email, password, role } = req.body;
@@ -60,7 +64,7 @@ const registerUser = async (req, res) => {
 };
 
 // @desc    Autenticar (login) um usuário
-// @route   POST /api/auth/login
+// @route   POST /api/v1/auth/login
 // @access  Public
 const loginUser = async (req, res) => {
     const { email, password } = req.body;
