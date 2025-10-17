@@ -27,7 +27,7 @@ const protect = async (req, res, next) => {
             
             // Note: O token pode ter a chave 'id' ou 'userId', dependendo de onde foi gerado.
             // Aqui estamos assumindo que o token gerado em authController usa 'userId'.
-            const user = await findUserById(decoded.userId); 
+            const user = await findUserById(decoded.id); 
 
             if (!user) {
                 return res.status(401).json({ error: "Não autorizado, usuário não encontrado." });
