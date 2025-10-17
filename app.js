@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const cors = require('cors'); 
 const helmet = require('helmet');
@@ -6,7 +7,6 @@ const authRoutes = require('./routes/authRoutes');
 const clientRoutes = require('./routes/clientRoutes');
 const leadRoutes = require('./routes/leadRoutes');
 const pipelineRoutes = require('./routes/pipelineRoutes');
-require('dotenv').config();
 
 const app = express();
 
