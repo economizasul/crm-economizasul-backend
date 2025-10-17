@@ -11,8 +11,9 @@ require('dotenv').config();
 const app = express();
 
 // --- Configuração de Middlewares ---
+const allowedFrontendUrl = 'https://crm-frontend-rbza.onrender.com';
 app.use(cors({
-    origin: '*', 
+    origin: allowedFrontendUrl, 
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
 }));
