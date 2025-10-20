@@ -2,13 +2,12 @@ const { pool } = require('../config/db');
 
 // Função auxiliar para formatar um lead (usada em createLead e getAllLeads)
 const formatLeadResponse = (lead) => {
-    // Garante que metadata seja um objeto, mesmo que venha como null
     const metadataContent = lead.metadata || {}; 
 
     const formatted = {
         _id: lead.id, // Mapeia 'id' (PostgreSQL) para '_id' (Frontend)
         ...lead,
-        ...metadataContent, // Descompacta uc, avgConsumption, notes, etc.
+        ...metadataContent, 
     };
     
     // Limpeza final do objeto de retorno
@@ -23,53 +22,46 @@ const formatLeadResponse = (lead) => {
 // @access  Private
 const createLead = async (req, res) => {
     // ID do usuário logado (definido pelo middleware 'protect')
-    const seller_id = req.user.id; 
+    const user_id = req.user.id; // <--- CORREÇÃO AQUI (user_id)
     
-    // Extrai todos os campos relevantes do body
     const { 
         name, phone, document, address, origin, status, 
         notes, qsa, uc, avgConsumption, estimatedSavings
     } = req.body;
 
-    // 1. Validação mínima (nome e telefone são obrigatórios)
     if (!name || !phone) {
         return res.status(400).json({ error: "Nome e telefone do lead são obrigatórios." });
     }
 
-    // 2. Prepara os dados complexos para o campo JSONB (metadata)
     const metadata = {
         notes: notes || [],
         qsa: qsa || null,
         uc: uc || null,
-        // Garante que os campos numéricos sejam floats (ou 0 se vazios)
         avgConsumption: parseFloat(avgConsumption) || 0,
         estimatedSavings: parseFloat(estimatedSavings) || 0,
     };
     
-    // 3. Define status e origem padrão
     const leadStatus = status || 'Para Contatar';
     const leadOrigin = origin || 'outros'; 
 
     try {
-        // 4. Query de inserção no PostgreSQL
+        // Query de inserção no PostgreSQL
+        // **CORREÇÃO AQUI:** Usando 'user_id' na inserção
         const result = await pool.query(
-            // **IMPORTANTE:** Aqui usamos 'seller_id' na inserção (como você definiu)
-            `INSERT INTO leads (name, phone, document, address, status, origin, seller_id, metadata) 
+            `INSERT INTO leads (name, phone, document, address, status, origin, user_id, metadata) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
             RETURNING *`,
             [
                 name, phone, document || null, address || null, 
-                leadStatus, leadOrigin, seller_id, JSON.stringify(metadata)
+                leadStatus, leadOrigin, user_id, JSON.stringify(metadata)
             ]
         );
 
-        // 5. Formata o retorno usando a função auxiliar
         const formattedLead = formatLeadResponse(result.rows[0]);
         
         res.status(201).json(formattedLead);
 
     } catch (error) {
-        // Trata erro de violação de unicidade (se houver UNIQUE constraint)
         if (error.code === '23505') { 
             return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
         }
@@ -89,8 +81,7 @@ const getAllLeads = async (req, res) => {
 
         // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
-            // **CORREÇÃO CRÍTICA:** Trocamos para 'user_id'. 
-            // O erro 500 anterior indicou que esta é a coluna correta no DB.
+            // **CORREÇÃO AQUI:** Usando 'user_id' na busca
             queryText += ' WHERE user_id = $1'; 
             queryParams = [req.user.id];
         }
@@ -99,10 +90,8 @@ const getAllLeads = async (req, res) => {
 
         const result = await pool.query(queryText, queryParams);
         
-        // 1. Formata os leads
         const formattedLeads = result.rows.map(formatLeadResponse);
         
-        // 2. Envia a resposta final
         res.status(200).json(formattedLeads);
 
     } catch (error) {
@@ -117,6 +106,4 @@ const getAllLeads = async (req, res) => {
 module.exports = {
     createLead,
     getAllLeads,
-    // As demais funções (getLeadById, updateLead, deleteLead) serão adicionadas
-    // e otimizadas em etapas futuras, quando o CRUD completo for necessário.
 };
