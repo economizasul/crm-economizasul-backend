@@ -27,16 +27,14 @@ const limiter = rateLimit({
 });
 app.use(limiter);
 
-// 4. Body Parser (DEVE VIR ANTES DAS ROTAS)
-app.use(express.json());
 
-// --- Rotas da Aplicação (DEVE VIR PRIMEIRO) ---
+app.use(express.json());
 app.use('/api/v1/auth', authRoutes); 
 app.use('/api/clients', clientRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/pipelines', pipelineRoutes);
 
-// Rota de teste simples (DEVE VIR DEPOIS DAS ROTAS DA APLICAÇÃO)
+// Rota de teste simples
 app.get('/', (req, res) => {
     res.send('CRM Backend API is running!');
 });
