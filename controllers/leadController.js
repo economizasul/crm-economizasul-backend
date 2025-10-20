@@ -42,7 +42,6 @@ const createLead = async (req, res) => {
         qsa: qsa || null,
         uc: uc || null,
         // Garante que os campos numéricos sejam floats (ou 0 se vazios)
-        // O parseInt/parseFloat é crucial aqui.
         avgConsumption: parseFloat(avgConsumption) || 0,
         estimatedSavings: parseFloat(estimatedSavings) || 0,
     };
@@ -54,6 +53,7 @@ const createLead = async (req, res) => {
     try {
         // 4. Query de inserção no PostgreSQL
         const result = await pool.query(
+            // **IMPORTANTE:** Aqui usamos 'seller_id' na inserção (como você definiu)
             `INSERT INTO leads (name, phone, document, address, status, origin, seller_id, metadata) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
             RETURNING *`,
@@ -89,8 +89,9 @@ const getAllLeads = async (req, res) => {
 
         // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
-            // Usa a coluna seller_id, que é a que você usou em createLead
-            queryText += ' WHERE seller_id = $1'; 
+            // **CORREÇÃO CRÍTICA:** Trocamos para 'user_id'. 
+            // O erro 500 anterior indicou que esta é a coluna correta no DB.
+            queryText += ' WHERE user_id = $1'; 
             queryParams = [req.user.id];
         }
         
@@ -98,7 +99,7 @@ const getAllLeads = async (req, res) => {
 
         const result = await pool.query(queryText, queryParams);
         
-        // 1. Formata os leads (CORREÇÃO DE SINTAXE E INCLUSÃO DE LÓGICA)
+        // 1. Formata os leads
         const formattedLeads = result.rows.map(formatLeadResponse);
         
         // 2. Envia a resposta final
