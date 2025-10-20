@@ -1,6 +1,6 @@
 const { pool } = require('../config/db');
 
-// Função auxiliar para formatar um lead (usada em createLead e getAllLeads)
+// Função auxiliar para formatar um lead
 const formatLeadResponse = (lead) => {
     const metadataContent = lead.metadata || {}; 
 
@@ -13,6 +13,8 @@ const formatLeadResponse = (lead) => {
     // Limpeza final do objeto de retorno
     delete formatted.id;
     delete formatted.metadata;
+    // IMPORTANTE: Deletar a chave da coluna do vendedor se o frontend não precisa dela
+    delete formatted.userId; // Adicionado para remover a chave após o mapeamento
     return formatted;
 };
 
@@ -21,9 +23,9 @@ const formatLeadResponse = (lead) => {
 // @route   POST /api/v1/leads
 // @access  Private
 const createLead = async (req, res) => {
-    // ID do usuário logado (definido pelo middleware 'protect')
-    const user_id = req.user.id; // <--- CORREÇÃO AQUI (user_id)
-    
+    // ID do usuário logado
+    const userId = req.user.id; // Variável JS
+
     const { 
         name, phone, document, address, origin, status, 
         notes, qsa, uc, avgConsumption, estimatedSavings
@@ -45,15 +47,14 @@ const createLead = async (req, res) => {
     const leadOrigin = origin || 'outros'; 
 
     try {
-        // Query de inserção no PostgreSQL
-        // **CORREÇÃO AQUI:** Usando 'user_id' na inserção
+        // **CORREÇÃO AQUI:** Usando '"userId"' na inserção para respeitar o camelCase no PostgreSQL
         const result = await pool.query(
-            `INSERT INTO leads (name, phone, document, address, status, origin, user_id, metadata) 
+            `INSERT INTO leads (name, phone, document, address, status, origin, "userId", metadata) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
             RETURNING *`,
             [
                 name, phone, document || null, address || null, 
-                leadStatus, leadOrigin, user_id, JSON.stringify(metadata)
+                leadStatus, leadOrigin, userId, JSON.stringify(metadata) // Variável userId
             ]
         );
 
@@ -81,8 +82,8 @@ const getAllLeads = async (req, res) => {
 
         // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
-            // **CORREÇÃO AQUI:** Usando 'user_id' na busca
-            queryText += ' WHERE user_id = $1'; 
+            // **CORREÇÃO AQUI:** Usando '"userId"' na busca para respeitar o camelCase no PostgreSQL
+            queryText += ' WHERE "userId" = $1'; 
             queryParams = [req.user.id];
         }
         
@@ -95,10 +96,9 @@ const getAllLeads = async (req, res) => {
         res.status(200).json(formattedLeads);
 
     } catch (error) {
-        // Loga o erro exato no servidor para debug
+        // Este log agora deve ser silencioso ou mostrar outro erro se a correção funcionar
         console.error('Erro ao buscar leads:', error.message);
         
-        // Retorna um erro genérico para o frontend
         res.status(500).json({ error: 'Erro interno do servidor ao buscar leads.' });
     }
 };
