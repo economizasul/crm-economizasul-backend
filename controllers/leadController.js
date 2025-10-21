@@ -4,17 +4,23 @@ const { pool } = require('../config/db');
 
 // Função auxiliar para formatar um lead
 const formatLeadResponse = (lead) => {
-    const metadataContent = lead.metadata || {};
     const formatted = {
-        _id: lead.id, // Mapeia 'id' (PostgreSQL) para '_id' (Frontend)
-        ...lead,
-        ...metadataContent,
-        ownerId: lead.owner_id, // Inclui explicitamente ownerId
+        _id: lead.id,
+        name: lead.name,
+        phone: lead.phone,
+        document: lead.document,
+        address: lead.address,
+        status: lead.status,
+        origin: lead.origin,
+        ownerId: lead.owner_id,
+        email: lead.email,
+        uc: lead.uc,
+        avgConsumption: lead.avg_consumption,
+        estimatedSavings: lead.estimated_savings,
+        qsa: lead.qsa,
+        notes: lead.notes,
+        createdAt: lead.created_at,
     };
-    // Limpeza final do objeto de retorno
-    delete formatted.id;
-    delete formatted.metadata;
-    delete formatted.owner_id; // Remove a chave original
     return formatted;
 };
 
@@ -24,14 +30,14 @@ const formatLeadResponse = (lead) => {
 const createLead = async (req, res) => {
     const userId = req.user.id;
     const {
-        name, phone, document, address, origin, status,
-        notes, qsa, uc, avgConsumption, estimatedSavings
+        name, phone, document, address, status, origin, email,
+        uc, avgConsumption, estimatedSavings, qsa, notes
     } = req.body;
 
     // Log dos dados recebidos para depuração
     console.log('Dados recebidos para criar lead:', {
-        name, phone, document, address, origin, status,
-        notes, qsa, uc, avgConsumption, estimatedSavings, userId
+        name, phone, document, address, status, origin, email,
+        uc, avgConsumption, estimatedSavings, qsa, notes, userId
     });
 
     if (!name || !phone) {
@@ -39,24 +45,16 @@ const createLead = async (req, res) => {
         return res.status(400).json({ error: "Nome e telefone do lead são obrigatórios." });
     }
 
-    const metadata = {
-        notes: notes || [],
-        qsa: qsa || null,
-        uc: uc || null,
-        avgConsumption: parseFloat(avgConsumption) || 0,
-        estimatedSavings: parseFloat(estimatedSavings) || 0,
-    };
-    const leadStatus = status || 'Para Contatar';
-    const leadOrigin = origin || 'outros';
-
     try {
         const result = await pool.query(
-            `INSERT INTO leads (name, phone, document, address, status, origin, owner_id, metadata) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+            `INSERT INTO leads (name, phone, document, address, status, origin, owner_id, email, uc, avg_consumption, estimated_savings, qsa, notes) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) 
             RETURNING *`,
             [
-                name, phone, document || null, address || null,
-                leadStatus, leadOrigin, userId, JSON.stringify(metadata)
+                name, phone, document || null, address || null, status || 'Para Contatar',
+                origin || 'outros', userId, email || null, uc || null,
+                parseFloat(avgConsumption) || null, parseFloat(estimatedSavings) || null,
+                qsa || null, notes || null
             ]
         );
 
@@ -66,7 +64,7 @@ const createLead = async (req, res) => {
     } catch (error) {
         console.error('Erro ao criar lead:', error.message, error.stack);
         if (error.code === '23505') {
-            return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
+            return res.status(400).json({ error: 'Um lead com o telefone ou email fornecido já existe.' });
         }
         res.status(500).json({ error: "Erro interno do servidor ao criar lead.", details: error.message });
     }
@@ -80,10 +78,8 @@ const getAllLeads = async (req, res) => {
         let queryText = 'SELECT * FROM leads';
         let queryParams = [];
 
-        // Log para depuração
         console.log('Usuário:', req.user);
 
-        // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
             queryText += ' WHERE owner_id = $1';
             queryParams = [req.user.id];
