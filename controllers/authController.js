@@ -1,105 +1,109 @@
-// controllers/authController.js
+// Novo controllers/leadController.js
 
-// CORREÇÃO: Removido o '.js' do require de 'db'
-const { pool } = require('../config/db'); 
-const bcrypt = require('bcryptjs'); 
-const jwt = require('jsonwebtoken');
+const { pool } = require('../config/db');
 
-// Adicionando o Model (embora você use pool.query, é bom ter o Model se ele existir)
-// Se você não usa Mongoose/Sequelize e usa apenas pg, esta linha não é necessária
-// const User = require('../models/User'); 
-
-// Função auxiliar para gerar JWT
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: '30d', // Token expira em 30 dias
-    });
+// Função auxiliar para formatar um lead
+const formatLeadResponse = (lead) => {
+    const metadataContent = lead.metadata || {}; 
+    
+    const formatted = {
+        _id: lead.id, // Mapeia 'id' (PostgreSQL) para '_id' (Frontend)
+        ...lead,
+        ...metadataContent, 
+    };
+    
+    // Limpeza final do objeto de retorno
+    delete formatted.id;
+    delete formatted.metadata;
+    // IMPORTANTE: Deletar a chave da coluna do vendedor (userId) após o mapeamento
+    delete formatted.userId;
+    return formatted;
 };
 
-// @desc    Registrar novo usuário
-// @route   POST /api/v1/auth/register
-// @access  Public
-const registerUser = async (req, res) => {
-    const { name, email, password, role } = req.body;
 
-    if (!name || !email || !password) {
-        return res.status(400).json({ error: 'Por favor, preencha todos os campos.' });
+// @desc    Cria um novo lead
+// @route   POST /api/v1/leads
+// @access  Private
+const createLead = async (req, res) => {
+    // ID do usuário logado
+    const userId = req.user.id; 
+
+    const { 
+        name, phone, document, address, origin, status, 
+        notes, qsa, uc, avgConsumption, estimatedSavings
+    } = req.body;
+
+    if (!name || !phone) {
+        return res.status(400).json({ error: "Nome e telefone do lead são obrigatórios." });
     }
 
+    const metadata = {
+        notes: notes || [],
+        qsa: qsa || null,
+        uc: uc || null,
+        avgConsumption: parseFloat(avgConsumption) || 0,
+        estimatedSavings: parseFloat(estimatedSavings) || 0,
+    };
+    
+    const leadStatus = status || 'Para Contatar';
+    const leadOrigin = origin || 'outros'; 
+
     try {
-        // 1. Verificar se o usuário já existe
-        const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
-
-        if (userExists.rows.length > 0) {
-            return res.status(400).json({ error: 'Usuário já existe.' });
-        }
-
-        // 2. Hash da senha
-        const salt = await bcrypt.genSalt(10);
-        const hashedPassword = await bcrypt.hash(password, salt);
-
-        // 3. Inserir novo usuário no banco de dados
-        const newUser = await pool.query(
-            'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role',
-            [name, email, hashedPassword, role || 'User'] 
+        // CORREÇÃO: Usando '"userId"' na inserção para respeitar o camelCase no PostgreSQL
+        const result = await pool.query(
+            `INSERT INTO leads (name, phone, document, address, status, origin, "userId", metadata) 
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
+            RETURNING *`,
+            [
+                name, phone, document || null, address || null, 
+                leadStatus, leadOrigin, userId, JSON.stringify(metadata) 
+            ]
         );
 
-        if (newUser.rows.length > 0) {
-            const user = newUser.rows[0];
-            res.status(201).json({
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                token: generateToken(user.id),
-            });
-        } else {
-            res.status(400).json({ error: 'Dados do usuário inválidos.' });
-        }
-
-    } catch (error) {
-        console.error("Erro CRÍTICO no registro (authController):", error.message);
-        res.status(500).json({ error: 'Erro interno do servidor ao registrar.' });
-    }
-};
-
-// @desc    Autenticar (login) um usuário
-// @route   POST /api/v1/auth/login
-// @access  Public
-const loginUser = async (req, res) => {
-    const { email, password } = req.body;
-
-    if (!email || !password) {
-        return res.status(400).json({ error: 'Por favor, forneça email e senha.' });
-    }
-
-    try {
-        // Seleciona explicitamente a coluna 'password'
-        const result = await pool.query('SELECT id, name, email, role, password FROM users WHERE email = $1', [email]);
-        const user = result.rows[0];
+        const formattedLead = formatLeadResponse(result.rows[0]);
         
-        // Verifica se o usuário existe e se a senha corresponde
-        if (user && await bcrypt.compare(password, user.password)) {
-            // Sucesso no login
-            res.json({
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                token: generateToken(user.id),
-            });
-        } else {
-            // Falha na autenticação (usuário não encontrado ou senha incorreta)
-            res.status(401).json({ error: 'Credenciais inválidas.' });
-        }
+        res.status(201).json(formattedLead);
 
     } catch (error) {
-        console.error("Erro CRÍTICO no login (authController):", error.message);
-        res.status(500).json({ error: 'Erro interno do servidor ao fazer login.' });
+        if (error.code === '23505') { 
+            return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
+        }
+        console.error("Erro ao criar lead:", error.message);
+        res.status(500).json({ error: "Erro interno do servidor ao criar lead." });
     }
 };
 
+
+// @desc    Lista todos os leads (Admin) ou leads próprios (User)
+// @route   GET /api/v1/leads
+// @access  Private
+const getAllLeads = async (req, res) => {
+    try {
+        let queryText = 'SELECT * FROM leads';
+        let queryParams = [];
+
+        // Filtra: Se não for Admin, busca apenas leads do vendedor logado
+        if (req.user.role && req.user.role !== 'Admin') {
+            // CORREÇÃO: Usando '"userId"' na busca para respeitar o camelCase no PostgreSQL
+            queryText += ' WHERE "userId" = $1'; 
+            queryParams = [req.user.id];
+        }
+        
+        queryText += ' ORDER BY created_at DESC';
+
+        const result = await pool.query(queryText, queryParams);
+        
+        const formattedLeads = result.rows.map(formatLeadResponse);
+        
+        res.status(200).json(formattedLeads);
+
+    } catch (error) {
+        console.error('Erro ao buscar leads:', error.message);
+        res.status(500).json({ error: 'Erro interno do servidor ao buscar leads.' });
+    }
+};
+    
 module.exports = {
-    registerUser,
-    loginUser,
+    createLead,
+    getAllLeads,
 };
