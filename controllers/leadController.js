@@ -28,7 +28,14 @@ const createLead = async (req, res) => {
         notes, qsa, uc, avgConsumption, estimatedSavings
     } = req.body;
 
+    // Log dos dados recebidos para depuração
+    console.log('Dados recebidos para criar lead:', {
+        name, phone, document, address, origin, status,
+        notes, qsa, uc, avgConsumption, estimatedSavings, userId
+    });
+
     if (!name || !phone) {
+        console.log('Validação falhou: name ou phone ausentes');
         return res.status(400).json({ error: "Nome e telefone do lead são obrigatórios." });
     }
 
@@ -53,13 +60,14 @@ const createLead = async (req, res) => {
             ]
         );
 
+        console.log('Lead criado com sucesso:', result.rows[0]);
         const formattedLead = formatLeadResponse(result.rows[0]);
         res.status(201).json(formattedLead);
     } catch (error) {
+        console.error('Erro ao criar lead:', error.message, error.stack);
         if (error.code === '23505') {
             return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
         }
-        console.error("Erro ao criar lead:", error.message, error.stack);
         res.status(500).json({ error: "Erro interno do servidor ao criar lead.", details: error.message });
     }
 };
