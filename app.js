@@ -1,6 +1,6 @@
 require('dotenv').config();
 const express = require('express');
-const cors = require('cors'); 
+const cors = require('cors');
 const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const authRoutes = require('./routes/authRoutes');
@@ -11,27 +11,37 @@ const pipelineRoutes = require('./routes/pipelineRoutes');
 const app = express();
 
 // --- Configuração de Middlewares ---
-const allowedFrontendUrl = 'https://crm-frontend-rbza.onrender.com';
+const allowedOrigins = [
+    'https://crm-frontend-rbza.onrender.com', // Frontend no Render
+    'http://localhost:3000', // Para testes locais
+    'http://localhost:5173', // Porta padrão do Vite, se aplicável
+];
+
 app.use(cors({
-    origin: allowedFrontendUrl, 
+    origin: (origin, callback) => {
+        if (!origin || allowedOrigins.includes(origin)) {
+            callback(null, true);
+        } else {
+            callback(new Error('Not allowed by CORS'));
+        }
+    },
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
 }));
 app.use(helmet());
 
 const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000, 
-    max: 100, 
+    windowMs: 15 * 60 * 1000,
+    max: 100,
     standardHeaders: true,
     legacyHeaders: false,
 });
 app.use(limiter);
 
-
 app.use(express.json());
-app.use('/api/v1/auth', authRoutes); 
+app.use('/api/v1/auth', authRoutes);
 app.use('/api/clients', clientRoutes);
-app.use('/api/leads', leadRoutes);
+app.use('/api/v1/leads', leadRoutes);
 app.use('/api/pipelines', pipelineRoutes);
 
 // Rota de teste simples
