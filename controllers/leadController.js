@@ -1,31 +1,29 @@
+// controllers/leadController.js
+
 const { pool } = require('../config/db');
 
 // Função auxiliar para formatar um lead
 const formatLeadResponse = (lead) => {
     const metadataContent = lead.metadata || {}; 
-
     const formatted = {
         _id: lead.id, // Mapeia 'id' (PostgreSQL) para '_id' (Frontend)
         ...lead,
         ...metadataContent, 
     };
-    
     // Limpeza final do objeto de retorno
     delete formatted.id;
     delete formatted.metadata;
-    // IMPORTANTE: Deletar a chave da coluna do vendedor se o frontend não precisa dela
-    delete formatted.userId; // Adicionado para remover a chave após o mapeamento
+    // IMPORTANTE: Deletar a chave da coluna do vendedor (userId) após o mapeamento
+    delete formatted.userId;
     return formatted;
 };
-
 
 // @desc    Cria um novo lead
 // @route   POST /api/v1/leads
 // @access  Private
 const createLead = async (req, res) => {
     // ID do usuário logado
-    const userId = req.user.id; // Variável JS
-
+    const userId = req.user.id; 
     const { 
         name, phone, document, address, origin, status, 
         notes, qsa, uc, avgConsumption, estimatedSavings
@@ -42,24 +40,22 @@ const createLead = async (req, res) => {
         avgConsumption: parseFloat(avgConsumption) || 0,
         estimatedSavings: parseFloat(estimatedSavings) || 0,
     };
-    
     const leadStatus = status || 'Para Contatar';
     const leadOrigin = origin || 'outros'; 
-
+    
     try {
-        // **CORREÇÃO AQUI:** Usando '"userId"' na inserção para respeitar o camelCase no PostgreSQL
+        // CORREÇÃO: Usando '"userId"' na inserção para respeitar o camelCase no PostgreSQL
         const result = await pool.query(
             `INSERT INTO leads (name, phone, document, address, status, origin, "userId", metadata) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
             RETURNING *`,
             [
                 name, phone, document || null, address || null, 
-                leadStatus, leadOrigin, userId, JSON.stringify(metadata) // Variável userId
+                leadStatus, leadOrigin, userId, JSON.stringify(metadata) 
             ]
         );
 
         const formattedLead = formatLeadResponse(result.rows[0]);
-        
         res.status(201).json(formattedLead);
 
     } catch (error) {
@@ -71,7 +67,6 @@ const createLead = async (req, res) => {
     }
 };
 
-
 // @desc    Lista todos os leads (Admin) ou leads próprios (User)
 // @route   GET /api/v1/leads
 // @access  Private
@@ -82,7 +77,7 @@ const getAllLeads = async (req, res) => {
 
         // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
-            // **CORREÇÃO AQUI:** Usando '"userId"' na busca para respeitar o camelCase no PostgreSQL
+            // 🚨 CORREÇÃO PRINCIPAL: Usando '"userId"' na busca para respeitar o camelCase no PostgreSQL
             queryText += ' WHERE "userId" = $1'; 
             queryParams = [req.user.id];
         }
@@ -96,13 +91,11 @@ const getAllLeads = async (req, res) => {
         res.status(200).json(formattedLeads);
 
     } catch (error) {
-        // Este log agora deve ser silencioso ou mostrar outro erro se a correção funcionar
         console.error('Erro ao buscar leads:', error.message);
-        
         res.status(500).json({ error: 'Erro interno do servidor ao buscar leads.' });
     }
-};
-    
+};  
+
 module.exports = {
     createLead,
     getAllLeads,

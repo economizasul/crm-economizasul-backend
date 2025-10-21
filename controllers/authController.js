@@ -1,109 +1,104 @@
-// Novo controllers/leadController.js
+// controllers/authController.js
 
-const { pool } = require('../config/db');
+const { pool } = require('../config/db'); 
+const bcrypt = require('bcryptjs'); 
+const jwt = require('jsonwebtoken');
 
-// Função auxiliar para formatar um lead
-const formatLeadResponse = (lead) => {
-    const metadataContent = lead.metadata || {}; 
-    
-    const formatted = {
-        _id: lead.id, // Mapeia 'id' (PostgreSQL) para '_id' (Frontend)
-        ...lead,
-        ...metadataContent, 
-    };
-    
-    // Limpeza final do objeto de retorno
-    delete formatted.id;
-    delete formatted.metadata;
-    // IMPORTANTE: Deletar a chave da coluna do vendedor (userId) após o mapeamento
-    delete formatted.userId;
-    return formatted;
+// Função auxiliar para gerar JWT
+const generateToken = (id) => {
+    return jwt.sign({ id }, process.env.JWT_SECRET, {
+        expiresIn: '30d', // Token expira em 30 dias
+    });
 };
 
+// @desc    Registrar novo usuário
+// @route   POST /api/v1/auth/register
+// @access  Public
+const registerUser = async (req, res) => {
+    const { name, email, password, role } = req.body;
 
-// @desc    Cria um novo lead
-// @route   POST /api/v1/leads
-// @access  Private
-const createLead = async (req, res) => {
-    // ID do usuário logado
-    const userId = req.user.id; 
-
-    const { 
-        name, phone, document, address, origin, status, 
-        notes, qsa, uc, avgConsumption, estimatedSavings
-    } = req.body;
-
-    if (!name || !phone) {
-        return res.status(400).json({ error: "Nome e telefone do lead são obrigatórios." });
+    if (!name || !email || !password) {
+        return res.status(400).json({ error: 'Por favor, preencha todos os campos.' });
     }
 
-    const metadata = {
-        notes: notes || [],
-        qsa: qsa || null,
-        uc: uc || null,
-        avgConsumption: parseFloat(avgConsumption) || 0,
-        estimatedSavings: parseFloat(estimatedSavings) || 0,
-    };
-    
-    const leadStatus = status || 'Para Contatar';
-    const leadOrigin = origin || 'outros'; 
-
     try {
-        // CORREÇÃO: Usando '"userId"' na inserção para respeitar o camelCase no PostgreSQL
+        // 1. Verificar se o usuário já existe
+        const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
+
+        if (userExists.rows.length > 0) {
+            return res.status(400).json({ error: 'Usuário já existe.' });
+        }
+
+        // 2. Hash da senha
+        const salt = await bcrypt.genSalt(10);
+        const hashedPassword = await bcrypt.hash(password, salt);
+        
+        // 3. Inserir novo usuário
+        const userRole = role || 'user'; // 'user' é o padrão
+        
         const result = await pool.query(
-            `INSERT INTO leads (name, phone, document, address, status, origin, "userId", metadata) 
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
-            RETURNING *`,
-            [
-                name, phone, document || null, address || null, 
-                leadStatus, leadOrigin, userId, JSON.stringify(metadata) 
-            ]
+            'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role',
+            [name, email, hashedPassword, userRole]
         );
 
-        const formattedLead = formatLeadResponse(result.rows[0]);
-        
-        res.status(201).json(formattedLead);
+        const newUser = result.rows[0];
 
-    } catch (error) {
-        if (error.code === '23505') { 
-            return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
+        // 4. Resposta de sucesso
+        if (newUser) {
+            res.status(201).json({
+                id: newUser.id,
+                name: newUser.name,
+                email: newUser.email,
+                role: newUser.role,
+                token: generateToken(newUser.id),
+            });
+        } else {
+            res.status(400).json({ error: 'Dados de usuário inválidos.' });
         }
-        console.error("Erro ao criar lead:", error.message);
-        res.status(500).json({ error: "Erro interno do servidor ao criar lead." });
+    } catch (error) {
+        console.error("Erro ao registrar usuário:", error.message);
+        res.status(500).json({ error: 'Erro interno do servidor ao registrar.' });
     }
 };
 
+// @desc    Autenticar (login) um usuário
+// @route   POST /api/v1/auth/login
+// @access  Public
+const loginUser = async (req, res) => {
+    const { email, password } = req.body;
 
-// @desc    Lista todos os leads (Admin) ou leads próprios (User)
-// @route   GET /api/v1/leads
-// @access  Private
-const getAllLeads = async (req, res) => {
+    if (!email || !password) {
+        return res.status(400).json({ error: 'Por favor, forneça email e senha.' });
+    }
+
     try {
-        let queryText = 'SELECT * FROM leads';
-        let queryParams = [];
-
-        // Filtra: Se não for Admin, busca apenas leads do vendedor logado
-        if (req.user.role && req.user.role !== 'Admin') {
-            // CORREÇÃO: Usando '"userId"' na busca para respeitar o camelCase no PostgreSQL
-            queryText += ' WHERE "userId" = $1'; 
-            queryParams = [req.user.id];
+        // Seleciona explicitamente a coluna 'password'
+        const result = await pool.query('SELECT id, name, email, role, password FROM users WHERE email = $1', [email]);
+        const user = result.rows[0];
+        
+        // Verifica se o usuário existe e se a senha corresponde
+        if (user && await bcrypt.compare(password, user.password)) {
+            // Sucesso no login
+            res.json({
+                id: user.id,
+                name: user.name,
+                email: user.email,
+                role: user.role,
+                token: generateToken(user.id),
+            });
+        } else {
+            // Falha na autenticação (usuário não encontrado ou senha incorreta)
+            res.status(401).json({ error: 'Credenciais inválidas.' });
         }
-        
-        queryText += ' ORDER BY created_at DESC';
-
-        const result = await pool.query(queryText, queryParams);
-        
-        const formattedLeads = result.rows.map(formatLeadResponse);
-        
-        res.status(200).json(formattedLeads);
 
     } catch (error) {
-        console.error('Erro ao buscar leads:', error.message);
-        res.status(500).json({ error: 'Erro interno do servidor ao buscar leads.' });
+        console.error("Erro ao fazer login:", error.message);
+        res.status(500).json({ error: 'Erro interno do servidor ao fazer login.' });
     }
 };
-    
+
+// Exportar como um objeto para evitar o TypeError no deploy
 module.exports = {
-    createLead,
-    getAllLeads,
+    registerUser,
+    loginUser,
 };
