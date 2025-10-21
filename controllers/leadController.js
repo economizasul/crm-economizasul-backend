@@ -9,12 +9,12 @@ const formatLeadResponse = (lead) => {
         _id: lead.id, // Mapeia 'id' (PostgreSQL) para '_id' (Frontend)
         ...lead,
         ...metadataContent,
-        sellerId: lead.seller_id, // Inclui explicitamente sellerId
+        ownerId: lead.owner_id, // Inclui explicitamente ownerId
     };
     // Limpeza final do objeto de retorno
     delete formatted.id;
     delete formatted.metadata;
-    delete formatted.seller_id; // Remove a chave original
+    delete formatted.owner_id; // Remove a chave original
     return formatted;
 };
 
@@ -44,7 +44,7 @@ const createLead = async (req, res) => {
 
     try {
         const result = await pool.query(
-            `INSERT INTO leads (name, phone, document, address, status, origin, seller_id, metadata) 
+            `INSERT INTO leads (name, phone, document, address, status, origin, owner_id, metadata) 
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8) 
             RETURNING *`,
             [
@@ -72,15 +72,21 @@ const getAllLeads = async (req, res) => {
         let queryText = 'SELECT * FROM leads';
         let queryParams = [];
 
+        // Log para depuração
+        console.log('Usuário:', req.user);
+
         // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
-            queryText += ' WHERE seller_id = $1';
+            queryText += ' WHERE owner_id = $1';
             queryParams = [req.user.id];
+            console.log('Filtrando leads para owner_id:', req.user.id);
         }
 
         queryText += ' ORDER BY created_at DESC';
 
         const result = await pool.query(queryText, queryParams);
+
+        console.log('Leads encontrados:', result.rows.length);
 
         const formattedLeads = result.rows.map(formatLeadResponse);
 
