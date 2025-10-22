@@ -1,47 +1,78 @@
-require('dotenv').config();
-const express = require('express');
-const cors = require('cors');
-const helmet = require('helmet');
-const rateLimit = require('express-rate-limit');
-const authRoutes = require('./routes/authRoutes');
-const clientRoutes = require('./routes/clientRoutes');
-const leadRoutes = require('./routes/leadRoutes');
-const pipelineRoutes = require('./routes/pipelineRoutes');
+// app.js
+// ===============================================
+// Aplicação Backend CRM-EconomizaSul
+// Configuração central de servidor, CORS e rotas
+// ===============================================
 
+const express = require("express");
+const cors = require("cors");
+const dotenv = require("dotenv");
+const path = require("path");
+
+// Carrega variáveis de ambiente (.env)
+dotenv.config();
+
+// Inicializa app Express
 const app = express();
 
+// ===========================
+// 🔒 Configuração de CORS
+// ===========================
 const allowedOrigins = [
-    'https://crm-front-renderer.onrender.com', // Origem correta do frontend
-    'https://crm-frontend-rbza.onrender.com',  // Mantido por compatibilidade
-    'http://localhost:3000',
-    'http://localhost:5173',
+  "https://crm-frontend-rbza.onrender.com",
+  "https://crm-front-renderer.onrender.com",
+  "http://localhost:5173" // desenvolvimento local
 ];
 
-// Simplificação do CORS com origem estática
-app.use(cors({
-    origin: allowedOrigins, // Define as origens permitidas diretamente
-    methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
+app.use(
+  cors({
+    origin: function (origin, callback) {
+      if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        console.log("🚫 Bloqueado por CORS:", origin);
+        callback(new Error("Not allowed by CORS"));
+      }
+    },
     credentials: true,
-}));
-app.use(helmet());
+  })
+);
 
-const limiter = rateLimit({
-    windowMs: 15 * 60 * 1000,
-    max: 100,
-    standardHeaders: true,
-    legacyHeaders: false,
-});
-app.use(limiter);
-
+// Middleware para JSON
 app.use(express.json());
-app.use('/api/v1/auth', authRoutes);
-app.use('/api/clients', clientRoutes);
-app.use('/api/v1/leads', leadRoutes);
-app.use('/api/pipelines', pipelineRoutes);
 
-app.get('/', (req, res) => {
-    res.send('CRM Backend API is running!');
+// ===========================
+// 📦 Importação de Rotas
+// ===========================
+const authRoutes = require("./routes/authRoutes");
+const leadRoutes = require("./routes/leadRouters");
+const clientRoutes = require("./routes/clientRoutes");
+const pipelineRoutes = require("./routes/pipelineRoutes");
+
+// ===========================
+// 🚦 Registro de Rotas
+// ===========================
+app.use("/api/v1/auth", authRoutes);
+app.use("/api/v1/leads", leadRoutes);
+app.use("/api/v1/clients", clientRoutes);
+app.use("/api/v1/pipeline", pipelineRoutes);
+
+// ===========================
+// 🩺 Health Check (teste rápido)
+// ===========================
+app.get("/", (req, res) => {
+  res.json({
+    message: "🚀 API CRM-EconomizaSul funcionando!",
+    status: "ok",
+  });
 });
 
-const PORT = process.env.PORT || 10000;
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+// ===========================
+// 🖥️ Inicialização do servidor
+// ===========================
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+  console.log(`✅ Servidor rodando na porta ${PORT}`);
+});
+
+module.exports = app;
