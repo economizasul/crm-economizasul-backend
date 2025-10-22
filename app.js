@@ -11,20 +11,15 @@ const pipelineRoutes = require('./routes/pipelineRoutes');
 const app = express();
 
 const allowedOrigins = [
-    'https://crm-front-renderer.onrender.com', // Adicionado a origem correta do frontend
+    'https://crm-front-renderer.onrender.com', // Origem correta do frontend
     'https://crm-frontend-rbza.onrender.com',  // Mantido por compatibilidade
     'http://localhost:3000',
     'http://localhost:5173',
 ];
 
+// Simplificação do CORS com origem estática
 app.use(cors({
-    origin: (origin, callback) => {
-        if (!origin || allowedOrigins.includes(origin)) {
-            callback(null, true);
-        } else {
-            callback(new Error('Not allowed by CORS'));
-        }
-    },
+    origin: allowedOrigins, // Define as origens permitidas diretamente
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE',
     credentials: true,
 }));
