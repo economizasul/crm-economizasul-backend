@@ -1,20 +1,19 @@
-// controllers/leadController.js
+// controllers/leadController.js - CÓDIGO FINAL
 
 const { pool } = require('../config/db');
-const axios = require('axios');
+const axios = require('axios'); // Para geocodificação, se necessário
 
-// Função auxiliar para formatar um lead
+// Função auxiliar para formatar um lead (para envio ao Frontend)
 const formatLeadResponse = (lead) => {
   // Garante que o notes seja um array para o frontend
   const notesArray = Array.isArray(lead.notes) ? lead.notes : [];
 
   // O frontend espera um array de objetos { text: string, timestamp: number }
-  // Usamos o updated_at do lead como base para um timestamp de ordenação
+  // Criamos um timestamp básico para ordenação, usando a data de atualização.
   const notesFormatted = notesArray.map((noteText, index) => ({ 
       text: noteText, 
-      // Cria um timestamp básico para ordenação, usando a data de atualização.
-      // A data exata da nota é geralmente adicionada no frontend.
-      timestamp: lead.updated_at ? new Date(lead.updated_at).getTime() - (notesArray.length - 1 - index) * 1000 : 0
+      // Usa updated_at, ou created_at para leads antigos
+      timestamp: new Date(lead.updated_at || lead.created_at).getTime() - (notesArray.length - 1 - index) * 1000 
   }));
 
   return {
@@ -25,19 +24,18 @@ const formatLeadResponse = (lead) => {
     address: lead.address,
     status: lead.status, // CRÍTICO: Status é coluna direta
     origin: lead.origin,
-    ownerId: lead.owner_id,
+    ownerId: lead.owner_id, // Mantido, mas deletado no getAllLeads
     email: lead.email,
     uc: lead.uc,
     avgConsumption: lead.avg_consumption,
     estimatedSavings: lead.estimated_savings,
     qsa: lead.qsa,
-    notes: notesFormatted, // CRÍTICO: Notes é coluna direta e enviado como array de objetos
+    notes: notesFormatted, // ARRAY DE OBJETOS para o FE
     createdAt: lead.created_at,
     updatedAt: lead.updated_at,
-    lastAttendance: lead.last_attendance,
-    attendanceNotes: lead.attendance_notes,
     lat: lead.lat,
     lng: lead.lng,
+    // Deletar o userId é feito no getAllLeads
   };
 };
 
@@ -48,23 +46,34 @@ const createLead = async (req, res) => {
   const userId = req.user.id;
   const {
     name, phone, document, address, status, origin, email,
-    uc, avgConsumption, estimatedSavings, qsa, notes
+    uc, avgConsumption, estimatedSavings, qsa, notes // notes é um array de strings
   } = req.body;
 
   if (!name || !phone) {
     return res.status(400).json({ error: "Nome e telefone do lead são obrigatórios." });
   }
 
-  const notesArray = Array.isArray(notes) ? notes : [];
-  
-  try {
-    const result = await pool.query(
-      'INSERT INTO leads (name, phone, document, address, status, origin, email, uc, avg_consumption, estimated_savings, qsa, notes, "userId") VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13) RETURNING *',
-      [name, phone, document, address, status, origin, email, uc, avgConsumption, estimatedSavings, qsa, notesArray, userId]
-    );
+  const avg_consumption = avgConsumption ? parseFloat(avgConsumption) : null;
+  const estimated_savings = estimatedSavings ? parseFloat(estimatedSavings) : null;
+  const notesArray = Array.isArray(notes) ? notes : []; // Garante que seja array
 
-    const formattedLead = formatLeadResponse(result.rows[0]);
-    res.status(201).json(formattedLead);
+  try {
+    const queryText = `
+      INSERT INTO leads (
+        name, phone, document, address, status, origin, email,
+        uc, avg_consumption, estimated_savings, qsa, notes, "userId"
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+      RETURNING *;
+    `;
+    const queryParams = [
+      name, phone, document, address, status || 'Para Contatar', origin, email,
+      uc, avg_consumption, estimated_savings, qsa, notesArray, userId
+    ];
+
+    const result = await pool.query(queryText, queryParams);
+    const newLead = result.rows[0];
+
+    res.status(201).json(formatLeadResponse(newLead));
 
   } catch (error) {
     if (error.code === '23505') { 
@@ -75,46 +84,65 @@ const createLead = async (req, res) => {
   }
 };
 
+
 // ===========================
-// 🧩 Atualizar lead (PUT) <--- FUNÇÃO CORRIGIDA E ADICIONADA
+// 🧩 Atualizar lead (PUT /:id)
 // ===========================
 const updateLead = async (req, res) => {
     const { id } = req.params;
-    const userId = req.user.id; // Verifica o dono do lead
-
-    const {
-        name, phone, document, address, status, origin, email,
-        uc, avgConsumption, estimatedSavings, qsa, notes // notes deve ser um array de strings
+    const { 
+        name, phone, document, address, status, origin, email, 
+        uc, avgConsumption, estimatedSavings, qsa, notes
     } = req.body;
-    
-    // Converte notes para array, se for nulo ou inválido, para evitar erro de SQL
-    const notesArray = Array.isArray(notes) ? notes : [];
-    
-    try {
-        const result = await pool.query(
-            `UPDATE leads 
-             SET 
-                name = $1, phone = $2, document = $3, address = $4, status = $5, 
-                origin = $6, email = $7, uc = $8, avg_consumption = $9, 
-                estimated_savings = $10, qsa = $11, notes = $12, 
-                updated_at = NOW() 
-             WHERE id = $13 AND "userId" = $14 
-             RETURNING *`,
-            [
-                name, phone, document, address, status, 
-                origin, email, uc, avgConsumption, 
-                estimatedSavings, qsa, notesArray,
-                id, userId // Parâmetros WHERE
-            ]
-        );
 
+    const avg_consumption = avgConsumption ? parseFloat(avgConsumption) : null;
+    const estimated_savings = estimatedSavings ? parseFloat(estimatedSavings) : null;
+    const notesArray = Array.isArray(notes) ? notes : []; // Array de strings (texto puro)
+    
+    // Lista de campos a serem atualizados (excluindo os que não podem ou não precisam de update)
+    const updateFields = {
+        name, phone, document, address, status, origin, email,
+        uc, avg_consumption, estimated_savings, qsa, notes: notesArray,
+        // Adiciona a atualização de data
+        updated_at: new Date() 
+    };
+
+    // Remove campos undefined ou vazios para não sobrescrever
+    Object.keys(updateFields).forEach(key => {
+        if (updateFields[key] === undefined || updateFields[key] === '') {
+            delete updateFields[key];
+        }
+    });
+
+    // Constrói a query SET dinamicamente
+    const setQuery = Object.keys(updateFields).map((key, index) => {
+        // Usa aspas duplas para o nome das colunas com camelCase no DB
+        const dbKey = key.replace(/([A-Z])/g, (g) => `_${g[0].toLowerCase()}`); 
+        return `"${dbKey}" = $${index + 2}`; // $2, $3, etc.
+    }).join(', ');
+
+    if (!setQuery) {
+        return res.status(400).json({ error: "Nenhum campo fornecido para atualização." });
+    }
+
+    const queryParams = [id, ...Object.values(updateFields)];
+
+    try {
+        const queryText = `
+            UPDATE leads 
+            SET ${setQuery}
+            WHERE id = $1
+            RETURNING *;
+        `;
+
+        const result = await pool.query(queryText, queryParams);
+        
         if (result.rows.length === 0) {
-            return res.status(404).json({ error: 'Lead não encontrado ou você não tem permissão para atualizá-lo.' });
+            return res.status(404).json({ error: "Lead não encontrado." });
         }
 
-        const formattedLead = formatLeadResponse(result.rows[0]);
-        res.status(200).json(formattedLead);
-        
+        res.status(200).json(formatLeadResponse(result.rows[0]));
+
     } catch (error) {
         if (error.code === '23505') { 
             return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
@@ -142,7 +170,11 @@ const getAllLeads = async (req, res) => {
 
         const result = await pool.query(queryText, queryParams);
         
-        const formattedLeads = result.rows.map(formatLeadResponse);
+        const formattedLeads = result.rows.map(lead => {
+            const formatted = formatLeadResponse(lead);
+            delete formatted.ownerId; // Remove a chave do vendedor (userId) antes de enviar
+            return formatted;
+        });
         
         res.status(200).json(formattedLeads);
 
@@ -153,12 +185,8 @@ const getAllLeads = async (req, res) => {
 };
 
 
-// ... (Inclua o restante do seu arquivo leadController.js, como geocodeAddress, scheduleAttendance, etc.)
-// Apenas garanta que updateLead seja exportado no final
-
-module.exports = {
-    createLead,
-    updateLead, 
-    getAllLeads,
-    // ... (Outras funções)
-};
+// ... (Inclua outras funções como geocodeAddress, scheduleAttendance, se existirem)
+// ...
+// module.exports = { createLead, getAllLeads, updateLead, geocodeAddress, scheduleAttendance };
+// No seu caso:
+module.exports = { createLead, getAllLeads, updateLead };
