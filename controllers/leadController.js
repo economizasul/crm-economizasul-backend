@@ -1,17 +1,16 @@
-// controllers/leadController.js - CÓDIGO CORRIGIDO
+// controllers/leadController.js - VERSÃO FINAL CORRIGIDA
 
 const { pool } = require('../config/db');
 const axios = require('axios');
-const LeadModel = require('../models/Lead'); // Importar o modelo correto (Assume que Lead.js é importado como LeadModel)
+const LeadModel = require('../models/Lead'); 
 
-// Função auxiliar para formatar um lead (ajustada para ler do metadata, se existir)
+// Função auxiliar para formatar um lead (AJUSTADA PARA USAR METADATA)
 const formatLeadResponse = (lead) => {
-    // Se 'metadata' for um objeto JSONB (como definido no Lead.js.txt), use-o.
-    // Caso contrário, use as colunas diretas se a migração já tiver ocorrido.
+    // Acessa o metadata ou usa um objeto vazio para segurança
     const metadata = (lead.metadata && typeof lead.metadata === 'object') ? lead.metadata : {};
     
-    // Garantir que 'notes' seja lido do metadata ou do campo notes, se for um array de strings
-    const sourceNotes = metadata.notes || lead.notes;
+    // Acessa as notas do metadata.notes
+    const sourceNotes = metadata.notes;
     const notesArray = Array.isArray(sourceNotes) ? sourceNotes : [];
 
     // O frontend espera um array de objetos { text: string, timestamp: number }
@@ -48,14 +47,14 @@ const formatLeadResponse = (lead) => {
 // 📦 Cria um novo Lead
 // ===========================
 const createLead = async (req, res) => {
-    const ownerId = req.user.id; // ID do usuário logado
+    const ownerId = req.user.id; 
     const { name, phone, document, address, status, origin, email, uc, avgConsumption, estimatedSavings, notes, qsa } = req.body;
 
     if (!name || !phone || !origin) {
         return res.status(400).json({ error: 'Nome, Telefone e Origem são campos obrigatórios.' });
     }
     
-    // O modelo Lead.js.txt usa o método 'create' que já manipula o metadata
+    // Usa o modelo Lead.js.txt que trata do metadata
     try {
         const newLead = await LeadModel.create({
             name,
@@ -64,7 +63,7 @@ const createLead = async (req, res) => {
             address,
             status: status || 'Para Contatar',
             origin,
-            ownerId, // Passa ownerId
+            ownerId, 
             email, uc, avgConsumption, estimatedSavings, notes, qsa
         });
 
@@ -86,24 +85,22 @@ const updateLead = async (req, res) => {
     const { id } = req.params;
     const { status, name, phone, document, address, origin, email, uc, avgConsumption, estimatedSavings, notes, qsa } = req.body;
     
-    // Objeto de dados para o método update do modelo (o modelo cuidará do metadata)
+    // Objeto de dados para o método update do modelo
     const updateData = {
         name, phone, document, address, status, origin, 
         email, uc, avgConsumption, estimatedSavings, notes, qsa,
-        ownerId: req.user.id // Precisa passar o ownerId para o modelo
+        ownerId: req.user.id 
     };
 
     try {
-        // Assume que LeadModel.update verifica permissão ou que vamos verificar o retorno
         const updatedLead = await LeadModel.update(id, updateData); 
 
         if (!updatedLead) {
             return res.status(404).json({ error: 'Lead não encontrado.' });
         }
 
-        // Se a atualização for bem-sucedida, verifica permissão (opcional, mas seguro)
+        // Verifica permissão (Admin ou Dono)
         if (req.user.role !== 'Admin' && updatedLead.owner_id !== req.user.id) {
-             // Rollback seria necessário aqui se você estivesse usando transação
             return res.status(403).json({ error: 'Você não tem permissão para editar este lead.' });
         }
 
@@ -129,8 +126,7 @@ const getAllLeads = async (req, res) => {
 
         // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
-            // CORREÇÃO CRÍTICA: Usa o nome correto da coluna 'owner_id'
-            queryText += ' WHERE "owner_id" = $1'; 
+            queryText += ' WHERE "owner_id" = $1'; // CORREÇÃO CRÍTICA APLICADA
             queryParams = [req.user.id];
         }
         
@@ -153,5 +149,6 @@ module.exports = {
     createLead,
     updateLead, 
     getAllLeads,
-    // ... (Outras funções)
+    // Se a tela de busca usar findById, ele já está no LeadModel
+    // Se usar outro filtro (e.g., searchLeads), esta função precisa ser implementada
 };
