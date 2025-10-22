@@ -1,19 +1,21 @@
-// controllers/leadController.js - CÓDIGO FINAL
+// controllers/leadController.js
 
 const { pool } = require('../config/db');
-const axios = require('axios'); // Para geocodificação, se necessário
+const axios = require('axios');
+const LeadModel = require('../models/Lead'); // Importar o modelo para usar a função updateLead
 
-// Função auxiliar para formatar um lead (para envio ao Frontend)
+// Função auxiliar para formatar um lead
 const formatLeadResponse = (lead) => {
   // Garante que o notes seja um array para o frontend
-  const notesArray = Array.isArray(lead.notes) ? lead.notes : [];
+  const notesArray = Array.isArray(lead.metadata.notes) ? lead.metadata.notes : [];
 
   // O frontend espera um array de objetos { text: string, timestamp: number }
-  // Criamos um timestamp básico para ordenação, usando a data de atualização.
+  // Usamos o updated_at do lead como base para um timestamp de ordenação
+  // Nota: A lógica de timestamp aqui é apenas um fallback. A data real é melhor adicionada no frontend.
   const notesFormatted = notesArray.map((noteText, index) => ({ 
       text: noteText, 
-      // Usa updated_at, ou created_at para leads antigos
-      timestamp: new Date(lead.updated_at || lead.created_at).getTime() - (notesArray.length - 1 - index) * 1000 
+      // Cria um timestamp básico para ordenação, usando a data de atualização.
+      timestamp: lead.updated_at ? new Date(lead.updated_at).getTime() - (notesArray.length - 1 - index) * 1000 : 0
   }));
 
   return {
@@ -24,133 +26,94 @@ const formatLeadResponse = (lead) => {
     address: lead.address,
     status: lead.status, // CRÍTICO: Status é coluna direta
     origin: lead.origin,
-    ownerId: lead.owner_id, // Mantido, mas deletado no getAllLeads
-    email: lead.email,
-    uc: lead.uc,
-    avgConsumption: lead.avg_consumption,
-    estimatedSavings: lead.estimated_savings,
-    qsa: lead.qsa,
-    notes: notesFormatted, // ARRAY DE OBJETOS para o FE
-    createdAt: lead.created_at,
-    updatedAt: lead.updated_at,
-    lat: lead.lat,
-    lng: lead.lng,
-    // Deletar o userId é feito no getAllLeads
+    ownerId: lead.owner_id,
+    email: lead.metadata.email, // Assume que email está dentro de metadata
+    uc: lead.metadata.uc,
+    avgConsumption: lead.metadata.avgConsumption,
+    estimatedSavings: lead.metadata.estimatedSavings,
+    notes: notesFormatted, // Usa as notas formatadas
+    qsa: lead.metadata.qsa,
   };
 };
 
 // ===========================
-// 🧩 Criar novo lead
+// 📦 Cria um novo Lead
 // ===========================
 const createLead = async (req, res) => {
-  const userId = req.user.id;
-  const {
-    name, phone, document, address, status, origin, email,
-    uc, avgConsumption, estimatedSavings, qsa, notes // notes é um array de strings
-  } = req.body;
+    const { name, phone, document, address, status, origin, email, uc, avgConsumption, estimatedSavings, notes } = req.body;
+    const ownerId = req.user.id; // Obtém o ID do usuário logado do middleware 'protect'
 
-  if (!name || !phone) {
-    return res.status(400).json({ error: "Nome e telefone do lead são obrigatórios." });
-  }
-
-  const avg_consumption = avgConsumption ? parseFloat(avgConsumption) : null;
-  const estimated_savings = estimatedSavings ? parseFloat(estimatedSavings) : null;
-  const notesArray = Array.isArray(notes) ? notes : []; // Garante que seja array
-
-  try {
-    const queryText = `
-      INSERT INTO leads (
-        name, phone, document, address, status, origin, email,
-        uc, avg_consumption, estimated_savings, qsa, notes, "userId"
-      ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
-      RETURNING *;
-    `;
-    const queryParams = [
-      name, phone, document, address, status || 'Para Contatar', origin, email,
-      uc, avg_consumption, estimated_savings, qsa, notesArray, userId
-    ];
-
-    const result = await pool.query(queryText, queryParams);
-    const newLead = result.rows[0];
-
-    res.status(201).json(formatLeadResponse(newLead));
-
-  } catch (error) {
-    if (error.code === '23505') { 
-      return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
+    if (!name || !phone || !origin) {
+        return res.status(400).json({ error: 'Nome, Telefone e Origem são campos obrigatórios.' });
     }
-    console.error("Erro ao criar lead:", error.message);
-    res.status(500).json({ error: "Erro interno do servidor ao criar lead." });
-  }
+
+    try {
+        // Usa o modelo para criar o lead
+        const newLead = await LeadModel.create({
+            name,
+            phone,
+            document,
+            address,
+            status: status || 'Para Contatar',
+            origin,
+            ownerId,
+            email,
+            uc,
+            avgConsumption,
+            estimatedSavings,
+            notes,
+        });
+
+        res.status(201).json(formatLeadResponse(newLead));
+
+    } catch (error) {
+        console.error("Erro ao criar lead:", error.message);
+        // Exemplo de como tratar erros de unicidade, se aplicável
+        if (error.code === '23505') { // Código de erro para violação de restrição de unicidade (Ex: telefone/documento já cadastrado)
+            return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
+        }
+        res.status(500).json({ error: "Erro interno do servidor ao criar lead." });
+    }
 };
 
-
 // ===========================
-// 🧩 Atualizar lead (PUT /:id)
+// ✏️ Atualiza um Lead Existente
 // ===========================
 const updateLead = async (req, res) => {
     const { id } = req.params;
-    const { 
-        name, phone, document, address, status, origin, email, 
-        uc, avgConsumption, estimatedSavings, qsa, notes
-    } = req.body;
+    const { status, name, phone, document, address, origin, email, uc, avgConsumption, estimatedSavings, notes } = req.body;
+    const ownerId = req.user.id; 
 
-    const avg_consumption = avgConsumption ? parseFloat(avgConsumption) : null;
-    const estimated_savings = estimatedSavings ? parseFloat(estimatedSavings) : null;
-    const notesArray = Array.isArray(notes) ? notes : []; // Array de strings (texto puro)
-    
-    // Lista de campos a serem atualizados (excluindo os que não podem ou não precisam de update)
-    const updateFields = {
-        name, phone, document, address, status, origin, email,
-        uc, avg_consumption, estimated_savings, qsa, notes: notesArray,
-        // Adiciona a atualização de data
-        updated_at: new Date() 
+    // O objeto de dados a ser passado para o modelo (o modelo cuidará do metadata)
+    const updateData = {
+        name, phone, document, address, status, origin, ownerId,
+        email, uc, avgConsumption, estimatedSavings, notes
     };
 
-    // Remove campos undefined ou vazios para não sobrescrever
-    Object.keys(updateFields).forEach(key => {
-        if (updateFields[key] === undefined || updateFields[key] === '') {
-            delete updateFields[key];
-        }
-    });
-
-    // Constrói a query SET dinamicamente
-    const setQuery = Object.keys(updateFields).map((key, index) => {
-        // Usa aspas duplas para o nome das colunas com camelCase no DB
-        const dbKey = key.replace(/([A-Z])/g, (g) => `_${g[0].toLowerCase()}`); 
-        return `"${dbKey}" = $${index + 2}`; // $2, $3, etc.
-    }).join(', ');
-
-    if (!setQuery) {
-        return res.status(400).json({ error: "Nenhum campo fornecido para atualização." });
-    }
-
-    const queryParams = [id, ...Object.values(updateFields)];
-
     try {
-        const queryText = `
-            UPDATE leads 
-            SET ${setQuery}
-            WHERE id = $1
-            RETURNING *;
-        `;
+        // A função update do modelo Lead já está configurada para lidar com a atualização
+        const updatedLead = await LeadModel.update(id, updateData); 
 
-        const result = await pool.query(queryText, queryParams);
-        
-        if (result.rows.length === 0) {
-            return res.status(404).json({ error: "Lead não encontrado." });
+        if (!updatedLead) {
+            return res.status(404).json({ error: 'Lead não encontrado.' });
         }
 
-        res.status(200).json(formatLeadResponse(result.rows[0]));
+        // Verifica se o usuário tem permissão para editar (só o dono ou Admin)
+        if (req.user.role !== 'Admin' && updatedLead.owner_id !== req.user.id) {
+            return res.status(403).json({ error: 'Você não tem permissão para editar este lead.' });
+        }
+
+        res.status(200).json(formatLeadResponse(updatedLead));
 
     } catch (error) {
-        if (error.code === '23505') { 
+        if (error.code === '23505') {
             return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
         }
         console.error("Erro ao atualizar lead:", error.message);
         res.status(500).json({ error: "Erro interno do servidor ao atualizar lead." });
     }
 };
+
 
 // ===========================
 // 🧩 Lista todos os leads (Admin) ou leads próprios (User)
@@ -162,7 +125,8 @@ const getAllLeads = async (req, res) => {
 
         // Filtra: Se não for Admin, busca apenas leads do vendedor logado
         if (req.user.role && req.user.role !== 'Admin') {
-            queryText += ' WHERE "userId" = $1'; 
+            // CORREÇÃO AQUI: Usa o nome correto da coluna 'owner_id'
+            queryText += ' WHERE "owner_id" = $1'; 
             queryParams = [req.user.id];
         }
         
@@ -170,11 +134,7 @@ const getAllLeads = async (req, res) => {
 
         const result = await pool.query(queryText, queryParams);
         
-        const formattedLeads = result.rows.map(lead => {
-            const formatted = formatLeadResponse(lead);
-            delete formatted.ownerId; // Remove a chave do vendedor (userId) antes de enviar
-            return formatted;
-        });
+        const formattedLeads = result.rows.map(formatLeadResponse);
         
         res.status(200).json(formattedLeads);
 
@@ -185,8 +145,9 @@ const getAllLeads = async (req, res) => {
 };
 
 
-// ... (Inclua outras funções como geocodeAddress, scheduleAttendance, se existirem)
-// ...
-// module.exports = { createLead, getAllLeads, updateLead, geocodeAddress, scheduleAttendance };
-// No seu caso:
-module.exports = { createLead, getAllLeads, updateLead };
+module.exports = {
+    createLead,
+    getAllLeads,
+    updateLead,
+    // ... (Outras funções, se houver)
+};
