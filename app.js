@@ -16,7 +16,7 @@ dotenv.config();
 const app = express();
 
 // ===========================
-// 🔒 Configuração de CORS
+// Configuração de CORS
 // ===========================
 const allowedOrigins = [
   "https://crm-frontend-rbza.onrender.com",
@@ -42,15 +42,15 @@ app.use(
 app.use(express.json());
 
 // ===========================
-// 📦 Importação de Rotas
+// Importação de Rotas
 // ===========================
 const authRoutes = require("./routes/authRoutes");
-const leadRoutes = require("./routes/leadRouters");
+const leadRoutes = require("./routes/leadRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const pipelineRoutes = require("./routes/pipelineRoutes");
 
 // ===========================
-// 🚦 Registro de Rotas
+// Registro de Rotas
 // ===========================
 app.use("/api/v1/auth", authRoutes);
 app.use("/api/v1/leads", leadRoutes);
