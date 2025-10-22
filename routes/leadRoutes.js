@@ -1,25 +1,29 @@
+// routes/leadRoutes.js
+
 const express = require('express');
 const router = express.Router();
-// Importa APENAS as funções que estão exportadas no leadController.js
+// O middleware 'protect' é essencial para garantir autenticação e req.user
+const { protect } = require('../middleware/authMiddleware'); 
+
 const { 
     createLead, 
-    getAllLeads,
-    // As demais funções (getLeadById, updateLead, deleteLead) foram removidas
-    // pois não foram implementadas no Controller na última limpeza.
-} = require('../controllers/leadController'); 
-const { protect } = require('../middleware/authMiddleware'); 
-// A função 'admin' não é necessária pois não estamos usando a rota DELETE/PUT
+    getAllLeads, 
+    updateLead, // Importa a função de atualização
+    // ... (Outras funções)
+} = require('../controllers/leadController');
 
-// Rotas de Leads - Cadastro e Listagem (Foco Principal)
+// Rotas principais de Leads
+router.route('/')
+    .get(protect, getAllLeads) 
+    .post(protect, createLead); 
 
-// POST /api/v1/leads - Cria um novo lead
-router.post('/', protect, createLead);
+// Rotas por ID
+router.route('/:id')
+    .put(protect, updateLead) // Rota PUT para atualização
+    // .delete(protect, deleteLead); // Se existir
 
-// GET /api/v1/leads - Lista leads (Admin vê todos, User vê apenas os seus)
-router.get('/', protect, getAllLeads);
-
-// OBSERVAÇÃO: Rotas para Detalhes (GET /:id), Atualização (PUT /:id) e 
-// Exclusão (DELETE /:id) foram temporariamente removidas. 
-// Elas devem ser adicionadas aqui APENAS após serem implementadas no Controller.
+// Outras rotas (se existirem)
+// router.route('/:id/geocode').put(protect, geocodeAddress); 
+// router.route('/:id/schedule').put(protect, scheduleAttendance);
 
 module.exports = router;
