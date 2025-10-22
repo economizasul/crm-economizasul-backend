@@ -1,6 +1,7 @@
 // controllers/leadController.js
 
 const { pool } = require('../config/db');
+const axios = require('axios');
 
 // Função auxiliar para formatar um lead
 const formatLeadResponse = (lead) => {
@@ -20,6 +21,10 @@ const formatLeadResponse = (lead) => {
         qsa: lead.qsa,
         notes: lead.notes,
         createdAt: lead.created_at,
+        lastAttendance: lead.last_attendance,
+        attendanceNotes: lead.attendance_notes,
+        lat: lead.lat,
+        lng: lead.lng,
     };
     return formatted;
 };
@@ -101,7 +106,80 @@ const getAllLeads = async (req, res) => {
     }
 };
 
+// @desc    Geocodifica endereço de um lead e salva lat/long usando Nominatim
+// @route   POST /api/v1/leads/:id/geocode
+// @access  Private
+const geocodeLeadAddress = async (req, res) => {
+    const { id } = req.params;
+    const lead = await pool.query('SELECT * FROM leads WHERE id = $1', [id]);
+    if (lead.rows.length === 0) {
+        return res.status(404).json({ error: 'Lead não encontrado.' });
+    }
+
+    const { address } = lead.rows[0];
+    if (!address) {
+        return res.status(400).json({ error: 'Endereço não fornecido.' });
+    }
+
+    try {
+        const response = await axios.get('https://nominatim.openstreetmap.org/search', {
+            params: {
+                q: address,
+                format: 'json',
+                addressdetails: 1,
+                limit: 1,
+            },
+            headers: {
+                'User-Agent': 'CRM-Pessoal/1.0[](https://crm-frontend-rbza.onrender.com)', // Obrigatório para Nominatim
+            },
+        });
+
+        if (response.data.length === 0) {
+            return res.status(404).json({ error: 'Endereço não encontrado.' });
+        }
+
+        const { lat, lon } = response.data[0];
+        await pool.query(
+            'UPDATE leads SET lat = $1, lng = $2 WHERE id = $3',
+            [parseFloat(lat), parseFloat(lon), id]
+        );
+
+        res.status(200).json({ message: 'Endereço geocodificado.', lat, lng });
+    } catch (error) {
+        console.error('Erro na geocodificação:', error.message);
+        res.status(500).json({ error: 'Falha na geocodificação do endereço.' });
+    }
+};
+
+// @desc    Cria evento de atendimento local para um lead
+// @route   POST /api/v1/leads/:id/schedule-attendance
+// @access  Private
+const scheduleAttendance = async (req, res) => {
+    const { id } = req.params;
+    const { date, time, notes } = req.body; // Ex.: date: "2025-10-25", time: "14:00"
+
+    const lead = await pool.query('SELECT * FROM leads WHERE id = $1', [id]);
+    if (lead.rows.length === 0) {
+        return res.status(404).json({ error: 'Lead não encontrado.' });
+    }
+
+    const attendanceTime = new Date(`${date}T${time}:00`).toISOString();
+    try {
+        await pool.query(
+            'UPDATE leads SET last_attendance = $1, attendance_notes = $2 WHERE id = $3',
+            [attendanceTime, notes, id]
+        );
+
+        res.status(201).json({ message: 'Atendimento agendado localmente.', attendanceTime });
+    } catch (error) {
+        console.error('Erro ao agendar atendimento:', error.message);
+        res.status(500).json({ error: 'Falha ao agendar atendimento.' });
+    }
+};
+
 module.exports = {
     createLead,
     getAllLeads,
+    geocodeLeadAddress,
+    scheduleAttendance,
 };
