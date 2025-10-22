@@ -99,6 +99,8 @@ const getAllLeads = async (req, res) => {
 
         const formattedLeads = result.rows.map(formatLeadResponse);
 
+        // Teste temporário: Forçar o header CORS
+        res.set('Access-Control-Allow-Origin', 'https://crm-front-renderer.onrender.com');
         res.status(200).json(formattedLeads);
     } catch (error) {
         console.error('Erro ao buscar leads:', error.message, error.stack);
@@ -130,7 +132,7 @@ const geocodeLeadAddress = async (req, res) => {
                 limit: 1,
             },
             headers: {
-                'User-Agent': 'CRM-Pessoal/1.0[](https://crm-frontend-rbza.onrender.com)', // Obrigatório para Nominatim
+                'User-Agent': 'CRM-Pessoal/1.0 ', // Obrigatório para Nominatim
             },
         });
 
