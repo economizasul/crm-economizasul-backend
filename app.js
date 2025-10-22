@@ -11,7 +11,8 @@ const pipelineRoutes = require('./routes/pipelineRoutes');
 const app = express();
 
 const allowedOrigins = [
-    'https://crm-frontend-rbza.onrender.com',
+    'https://crm-front-renderer.onrender.com', // Adicionado a origem correta do frontend
+    'https://crm-frontend-rbza.onrender.com',  // Mantido por compatibilidade
     'http://localhost:3000',
     'http://localhost:5173',
 ];
