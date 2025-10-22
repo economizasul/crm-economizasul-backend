@@ -10,11 +10,10 @@ const pipelineRoutes = require('./routes/pipelineRoutes');
 
 const app = express();
 
-// --- Configuração de Middlewares ---
 const allowedOrigins = [
-    'https://crm-frontend-rbza.onrender.com', // Frontend no Render
-    'http://localhost:3000', // Para testes locais
-    'http://localhost:5173', // Porta padrão do Vite, se aplicável
+    'https://crm-frontend-rbza.onrender.com',
+    'http://localhost:3000',
+    'http://localhost:5173',
 ];
 
 app.use(cors({
@@ -44,11 +43,9 @@ app.use('/api/clients', clientRoutes);
 app.use('/api/v1/leads', leadRoutes);
 app.use('/api/pipelines', pipelineRoutes);
 
-// Rota de teste simples
 app.get('/', (req, res) => {
     res.send('CRM Backend API is running!');
 });
 
-// --- Inicialização do Servidor ---
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
