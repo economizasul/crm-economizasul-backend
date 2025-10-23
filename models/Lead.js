@@ -10,6 +10,7 @@ class Lead {
                 phone VARCHAR(20) NOT NULL, 
                 document VARCHAR(50), 
                 address VARCHAR(255),
+                email VARCHAR(255),  -- Adicionado email como coluna principal (Recomendado)
                 status VARCHAR(50) DEFAULT 'Para Contatar', 
                 origin VARCHAR(100),
                 metadata JSONB DEFAULT '{}', 
@@ -28,20 +29,22 @@ class Lead {
     }
 
     // 2. Cria um novo Lead
-    static async create({ name, phone, document, address, origin, status, ownerId, uc, avgConsumption, estimatedSavings, notes }) {
+    static async create({ name, phone, document, address, origin, status, ownerId, email, uc, avgConsumption, estimatedSavings, notes, qsa }) {
         const metadata = {
-            uc: uc,
-            avgConsumption: avgConsumption,
-            estimatedSavings: estimatedSavings,
+            uc: uc || null,
+            avgConsumption: avgConsumption || null,
+            estimatedSavings: estimatedSavings || null,
             notes: notes || [],
+            qsa: qsa || null,
         };
 
         const query = `
-            INSERT INTO leads (name, phone, document, address, status, origin, owner_id, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            INSERT INTO leads (name, phone, document, address, origin, status, owner_id, email, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
             RETURNING *;
         `;
-        const values = [name, phone, document, address, status, origin, ownerId, JSON.stringify(metadata)];
+        
+        const values = [name, phone, document, address, origin, status, ownerId, email, JSON.stringify(metadata)];
 
         try {
             const result = await pool.query(query, values);
@@ -51,36 +54,8 @@ class Lead {
             throw error;
         }
     }
-
-    // 3. Busca TODOS os Leads
-    static async findAll() {
-        const query = `
-            SELECT * FROM leads ORDER BY created_at DESC;
-        `;
-        try {
-            const result = await pool.query(query);
-            return result.rows;
-        } catch (error) {
-            console.error('Erro no modelo ao buscar TODOS os leads:', error);
-            throw error;
-        }
-    }
-
-    // 4. Busca todos os Leads de um Dono Específico
-    static async findByOwner(ownerId) {
-        const query = `
-            SELECT * FROM leads WHERE owner_id = $1 ORDER BY created_at DESC;
-        `;
-        try {
-            const result = await pool.query(query, [ownerId]);
-            return result.rows;
-        } catch (error) {
-            console.error('Erro no modelo ao buscar leads por dono:', error);
-            throw error;
-        }
-    }
-
-    // 5. Busca Lead por ID
+    
+    // 3. Busca Lead por ID
     static async findById(id) {
         const query = 'SELECT * FROM leads WHERE id = $1';
         try {
@@ -92,32 +67,60 @@ class Lead {
         }
     }
 
-    // 6. Atualiza Lead
-    static async update(id, { name, phone, document, address, origin, status, ownerId, uc, avgConsumption, estimatedSavings, notes }) {
+    // 4. Busca todos os Leads (com filtros básicos)
+    static async findAll(ownerId = null, isAdmin = false) {
+        let query = 'SELECT * FROM leads';
+        const params = [];
+
+        if (!isAdmin && ownerId) {
+            params.push(ownerId);
+            query += ` WHERE owner_id = $${params.length}`;
+        }
+
+        query += ' ORDER BY created_at DESC';
+
+        try {
+            const result = await pool.query(query, params);
+            return result.rows;
+        } catch (error) {
+            console.error('Erro no modelo ao buscar todos os leads:', error);
+            throw error;
+        }
+    }
+
+    // 5. Atualiza Lead Completo (incluindo campos de metadata) - CORRIGIDO PARA SALVAR NOTAS
+    static async update(id, { 
+        name, phone, document, address, status, origin, ownerId, email, // Campos principais
+        uc, avgConsumption, estimatedSavings, notes, qsa // Campos de metadata
+    }) {
+        
+        // 1. Constrói o objeto de metadata JSONB com os campos não principais
+        // O array 'notes' AGORA é um array de strings, como o backend espera
         const metadata = {
-            uc: uc,
-            avgConsumption: avgConsumption,
-            estimatedSavings: estimatedSavings,
-            notes: notes || [],
+            uc: uc || null,
+            avgConsumption: avgConsumption || null,
+            estimatedSavings: estimatedSavings || null,
+            notes: notes || [], 
+            qsa: qsa || null,
         };
 
+        // 2. Query SQL
+        // Atualiza campos principais e o campo JSONB 'metadata'
+        // CRÍTICO: Note que o email agora é o parâmetro $8 na query.
         const query = `
             UPDATE leads
-            SET 
-                name = $1, 
-                phone = $2, 
-                document = $3, 
-                address = $4, 
-                status = $5, 
-                origin = $6, 
-                owner_id = $7, 
-                metadata = $8,
+            SET name = $1, phone = $2, document = $3, address = $4, status = $5, origin = $6, owner_id = $7, email = $8,
+                metadata = $9,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $9
+            WHERE id = $10
             RETURNING *;
         `;
 
-        const values = [name, phone, document, address, status, origin, ownerId, JSON.stringify(metadata), id];
+        const values = [
+            name, phone, document, address, status, origin, ownerId, email,
+            JSON.stringify(metadata), // Converte o objeto metadata para JSON string
+            id
+        ];
 
         try {
             const result = await pool.query(query, values);
@@ -127,8 +130,8 @@ class Lead {
             throw error;
         }
     }
-
-    // 7. Atualiza APENAS o status
+    
+    // 6. Atualiza APENAS o status (Para Drag and Drop)
     static async updateStatus(id, newStatus) {
         const query = `
             UPDATE leads
@@ -146,7 +149,7 @@ class Lead {
         }
     }
 
-    // 8. Exclui Lead
+    // 7. Exclui Lead
     static async delete(id) {
         const query = 'DELETE FROM leads WHERE id = $1 RETURNING *;';
         try {
