@@ -1,3 +1,5 @@
+// models/Lead.js
+
 const { pool } = require('../config/db');
 
 class Lead {
@@ -28,24 +30,39 @@ class Lead {
     }
 
     // 2. Cria um novo Lead
-    static async create({ name, phone, document, address, origin, status, ownerId, email, uc, avgConsumption, estimatedSavings, notes, qsa }) {
+    static async create({ 
+        name, phone, document, address, origin, status, ownerId, 
+        email, uc, avgConsumption, estimatedSavings, notes, qsa 
+    }) {
+        
+        // CRÍTICO: Todos os campos customizados e 'email' vão para metadata
         const metadata = {
-            email: email || null, 
+            email: email || null,
             uc: uc || null,
             avgConsumption: avgConsumption || null,
             estimatedSavings: estimatedSavings || null,
-            notes: notes || [],
+            notes: notes || [], // Deve ser um array de strings
             qsa: qsa || null,
         };
 
+        // Query INSERT com 8 parâmetros
         const query = `
             INSERT INTO leads (name, phone, document, address, origin, status, owner_id, metadata)
             VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *;
         `;
         
-        // 8 valores: name, phone, document, address, origin, status, ownerId, metadata (JSON)
-        const values = [name, phone, document, address, origin, status, ownerId, JSON.stringify(metadata)];
+        // Array de Valores (8 parâmetros)
+        const values = [
+            name,           // $1
+            phone,          // $2
+            document,       // $3
+            address,        // $4
+            origin,         // $5
+            status,         // $6
+            ownerId,        // $7
+            JSON.stringify(metadata) // $8 (Metadata JSONB)
+        ];
 
         try {
             const result = await pool.query(query, values);
@@ -68,7 +85,7 @@ class Lead {
         }
     }
 
-    // 4. Busca todos os Leads (com filtros básicos)
+    // 4. Busca todos os Leads
     static async findAll(ownerId = null, isAdmin = false) {
         let query = 'SELECT * FROM leads';
         const params = [];
@@ -89,9 +106,9 @@ class Lead {
         }
     }
 
-    // 5. Atualiza Lead Completo (incluindo campos de metadata) - REVISÃO FINAL
+    // 5. Atualiza Lead Completo - CORREÇÃO DEFINITIVA DO ERRO 500
     static async update(id, { 
-        name, phone, document, address, status, origin, ownerId, // Campos principais
+        name, phone, document, address, status, origin, ownerId, // 7 Campos principais
         email, uc, avgConsumption, estimatedSavings, notes, qsa // Campos de metadata
     }) {
         
@@ -105,7 +122,9 @@ class Lead {
             qsa: qsa || null,
         };
         
-        // 2. Query SQL: 8 colunas sendo SETadas, 9 parâmetros no total
+        // 2. Query SQL: 8 colunas sendo SETadas, 9 parâmetros no total.
+        // Se este for o ponto de falha, é porque uma das colunas (name, phone, document, address, status, origin, owner_id, metadata)
+        // tem um nome diferente no seu DB.
         const query = `
             UPDATE leads
             SET name = $1, phone = $2, document = $3, address = $4, status = $5, origin = $6, owner_id = $7,
@@ -115,12 +134,12 @@ class Lead {
             RETURNING *;
         `;
         
-        // 3. Array de Valores: Ordem precisa bater perfeitamente com a query
+        // 3. Array de Valores: Ordem e contagem exata (9 parâmetros)
         const values = [
             name,           // $1
             phone,          // $2
-            document,       // $3. Se for null/undefined, passa null (se a coluna permitir)
-            address,        // $4. Se for null/undefined, passa null (se a coluna permitir)
+            document,       // $3
+            address,        // $4
             status,         // $5
             origin,         // $6
             ownerId,        // $7
@@ -129,16 +148,17 @@ class Lead {
         ];
 
         try {
-            // Se o erro 500 está aqui, significa que a DB não gostou da Query ou dos Valores.
             const result = await pool.query(query, values);
             return result.rows[0] || null;
         } catch (error) {
-            console.error('Erro CRÍTICO no modelo ao atualizar lead (Verifique Schema):', error.message);
+            // Log de erro aprimorado para ajudar na depuração no console do servidor
+            console.error(`Erro CRÍTICO no modelo Lead.update (ID: ${id}):`, error.message);
+            console.error('Valores Enviados:', values);
             throw error;
         }
     }
     
-    // 6. Atualiza APENAS o status (Para Drag and Drop)
+    // 6. Atualiza APENAS o status
     static async updateStatus(id, newStatus) {
         const query = `
             UPDATE leads
