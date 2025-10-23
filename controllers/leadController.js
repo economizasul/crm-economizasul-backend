@@ -7,14 +7,12 @@ const axios = require('axios'); // Mantido caso você o use em outras funções
 // Função auxiliar para formatar um lead (CRÍTICO: Extrai dados da metadata)
 const formatLeadResponse = (lead) => {
     // Tenta extrair a metadata, se existir e for um objeto JSON válido
-    // No PostgreSQL, metadata será um objeto JSON
     const metadata = lead.metadata && typeof lead.metadata === 'object' ? lead.metadata : {};
     
     // As notas vêm da metadata.notes, que é um array de strings
     const notesArray = Array.isArray(metadata.notes) ? metadata.notes : [];
 
     // O frontend espera um array de objetos { text: string, timestamp: number }
-    // A data exata da nota vem do frontend, aqui apenas formatamos para a estrutura esperada.
     const notesFormatted = notesArray.map((noteText, index) => ({ 
         text: noteText, 
         // Cria um timestamp básico para ordenação reversa (mais recentes primeiro)
@@ -30,9 +28,9 @@ const formatLeadResponse = (lead) => {
         status: lead.status, 
         origin: lead.origin,
         ownerId: lead.owner_id,
-        email: lead.email || '', // Email vem da coluna principal
         
         // Campos de metadata
+        email: metadata.email || '', // <-- LENDO EMAIL DA METADATA
         uc: metadata.uc || '',
         avgConsumption: metadata.avgConsumption || null,
         estimatedSavings: metadata.estimatedSavings || null,
@@ -49,6 +47,7 @@ const formatLeadResponse = (lead) => {
 // 📝 Cria um novo lead (POST /api/v1/leads)
 // ===========================
 const createLead = async (req, res) => {
+    // Garante que TODOS os campos enviados pelo frontend são extraídos.
     const { name, phone, document, address, status, origin, email, uc, avgConsumption, estimatedSavings, notes, qsa } = req.body;
     const ownerId = req.user.id; 
 
@@ -118,8 +117,8 @@ const updateLead = async (req, res) => {
     try {
         // Chama o método 'update' do modelo Lead
         const updatedLead = await Lead.update(id, { 
-            name, phone, document, address, status, origin, ownerId, email,
-            avgConsumption, estimatedSavings, notes, uc, qsa 
+            name, phone, document, address, status, origin, ownerId, 
+            email, avgConsumption, estimatedSavings, notes, uc, qsa // Passa email junto com os campos de metadata
         });
 
         if (!updatedLead) {
@@ -163,9 +162,6 @@ const updateLeadStatus = async (req, res) => {
         res.status(500).json({ error: "Erro interno do servidor ao atualizar status." });
     }
 };
-
-
-// ... (Adicione aqui outras funções como deleteLead, getLead, etc.)
 
 module.exports = {
     createLead,

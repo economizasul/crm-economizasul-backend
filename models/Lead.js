@@ -10,7 +10,6 @@ class Lead {
                 phone VARCHAR(20) NOT NULL, 
                 document VARCHAR(50), 
                 address VARCHAR(255),
-                email VARCHAR(255),  -- Adicionado email como coluna principal (Recomendado)
                 status VARCHAR(50) DEFAULT 'Para Contatar', 
                 origin VARCHAR(100),
                 metadata JSONB DEFAULT '{}', 
@@ -31,6 +30,7 @@ class Lead {
     // 2. Cria um novo Lead
     static async create({ name, phone, document, address, origin, status, ownerId, email, uc, avgConsumption, estimatedSavings, notes, qsa }) {
         const metadata = {
+            email: email || null, // <-- Email movido para metadata
             uc: uc || null,
             avgConsumption: avgConsumption || null,
             estimatedSavings: estimatedSavings || null,
@@ -39,12 +39,12 @@ class Lead {
         };
 
         const query = `
-            INSERT INTO leads (name, phone, document, address, origin, status, owner_id, email, metadata)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            INSERT INTO leads (name, phone, document, address, origin, status, owner_id, metadata)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
             RETURNING *;
         `;
         
-        const values = [name, phone, document, address, origin, status, ownerId, email, JSON.stringify(metadata)];
+        const values = [name, phone, document, address, origin, status, ownerId, JSON.stringify(metadata)];
 
         try {
             const result = await pool.query(query, values);
@@ -88,15 +88,15 @@ class Lead {
         }
     }
 
-    // 5. Atualiza Lead Completo (incluindo campos de metadata) - CORRIGIDO PARA SALVAR NOTAS
+    // 5. Atualiza Lead Completo (incluindo campos de metadata) - CORRIGIDO PARA USAR 9 PARÂMETROS
     static async update(id, { 
-        name, phone, document, address, status, origin, ownerId, email, // Campos principais
-        uc, avgConsumption, estimatedSavings, notes, qsa // Campos de metadata
+        name, phone, document, address, status, origin, ownerId, // Campos principais
+        email, uc, avgConsumption, estimatedSavings, notes, qsa // Campos de metadata
     }) {
         
-        // 1. Constrói o objeto de metadata JSONB com os campos não principais
-        // O array 'notes' AGORA é um array de strings, como o backend espera
+        // 1. Constrói o objeto de metadata JSONB com todos os campos customizados
         const metadata = {
+            email: email || null, // <-- Email MOVIDO PARA AQUI
             uc: uc || null,
             avgConsumption: avgConsumption || null,
             estimatedSavings: estimatedSavings || null,
@@ -104,22 +104,20 @@ class Lead {
             qsa: qsa || null,
         };
 
-        // 2. Query SQL
-        // Atualiza campos principais e o campo JSONB 'metadata'
-        // CRÍTICO: Note que o email agora é o parâmetro $8 na query.
+        // 2. Query SQL: Volta a usar 9 parâmetros, pois a coluna 'email' não está sendo atualizada diretamente
         const query = `
             UPDATE leads
-            SET name = $1, phone = $2, document = $3, address = $4, status = $5, origin = $6, owner_id = $7, email = $8,
-                metadata = $9,
+            SET name = $1, phone = $2, document = $3, address = $4, status = $5, origin = $6, owner_id = $7,
+                metadata = $8,
                 updated_at = CURRENT_TIMESTAMP
-            WHERE id = $10
+            WHERE id = $9
             RETURNING *;
         `;
 
         const values = [
-            name, phone, document, address, status, origin, ownerId, email,
-            JSON.stringify(metadata), // Converte o objeto metadata para JSON string
-            id
+            name, phone, document, address, status, origin, ownerId,
+            JSON.stringify(metadata), // $8
+            id // $9
         ];
 
         try {
