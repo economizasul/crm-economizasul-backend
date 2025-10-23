@@ -30,7 +30,7 @@ class Lead {
     // 2. Cria um novo Lead
     static async create({ name, phone, document, address, origin, status, ownerId, email, uc, avgConsumption, estimatedSavings, notes, qsa }) {
         const metadata = {
-            email: email || null, // <-- Email movido para metadata
+            email: email || null, 
             uc: uc || null,
             avgConsumption: avgConsumption || null,
             estimatedSavings: estimatedSavings || null,
@@ -44,6 +44,7 @@ class Lead {
             RETURNING *;
         `;
         
+        // 8 valores: name, phone, document, address, origin, status, ownerId, metadata (JSON)
         const values = [name, phone, document, address, origin, status, ownerId, JSON.stringify(metadata)];
 
         try {
@@ -88,7 +89,7 @@ class Lead {
         }
     }
 
-    // 5. Atualiza Lead Completo (incluindo campos de metadata) - CORRIGIDO PARA USAR 9 PARÂMETROS
+    // 5. Atualiza Lead Completo (incluindo campos de metadata) - REVISÃO FINAL
     static async update(id, { 
         name, phone, document, address, status, origin, ownerId, // Campos principais
         email, uc, avgConsumption, estimatedSavings, notes, qsa // Campos de metadata
@@ -96,15 +97,15 @@ class Lead {
         
         // 1. Constrói o objeto de metadata JSONB com todos os campos customizados
         const metadata = {
-            email: email || null, // <-- Email MOVIDO PARA AQUI
+            email: email || null, 
             uc: uc || null,
             avgConsumption: avgConsumption || null,
             estimatedSavings: estimatedSavings || null,
             notes: notes || [], 
             qsa: qsa || null,
         };
-
-        // 2. Query SQL: Volta a usar 9 parâmetros, pois a coluna 'email' não está sendo atualizada diretamente
+        
+        // 2. Query SQL: 8 colunas sendo SETadas, 9 parâmetros no total
         const query = `
             UPDATE leads
             SET name = $1, phone = $2, document = $3, address = $4, status = $5, origin = $6, owner_id = $7,
@@ -113,18 +114,26 @@ class Lead {
             WHERE id = $9
             RETURNING *;
         `;
-
+        
+        // 3. Array de Valores: Ordem precisa bater perfeitamente com a query
         const values = [
-            name, phone, document, address, status, origin, ownerId,
-            JSON.stringify(metadata), // $8
-            id // $9
+            name,           // $1
+            phone,          // $2
+            document,       // $3. Se for null/undefined, passa null (se a coluna permitir)
+            address,        // $4. Se for null/undefined, passa null (se a coluna permitir)
+            status,         // $5
+            origin,         // $6
+            ownerId,        // $7
+            JSON.stringify(metadata), // $8 (JSONB)
+            id              // $9 (WHERE clause)
         ];
 
         try {
+            // Se o erro 500 está aqui, significa que a DB não gostou da Query ou dos Valores.
             const result = await pool.query(query, values);
             return result.rows[0] || null;
         } catch (error) {
-            console.error('Erro no modelo ao atualizar lead:', error);
+            console.error('Erro CRÍTICO no modelo ao atualizar lead (Verifique Schema):', error.message);
             throw error;
         }
     }
