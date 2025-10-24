@@ -1,26 +1,32 @@
 // controllers/leadController.js
 
 const { pool } = require('../config/db');
-const Lead = require('../models/Lead'); 
-const axios = require('axios'); // Mantido caso você o use em outras funções
+const axios = require('axios');
+const Lead = require('../models/Lead'); // Importa o modelo Lead
 
 // ===========================
-// 🛠️ Função auxiliar para formatar um lead (CRÍTICO: Extrai dados da metadata)
+// 🛠️ Função auxiliar para formatar um lead
 // ===========================
 const formatLeadResponse = (lead) => {
-    // Tenta extrair a metadata, se existir e for um objeto JSON válido
-    const metadata = lead.metadata && typeof lead.metadata === 'object' ? lead.metadata : {};
+    // ATENÇÃO: Lendo 'notes' (coluna TEXT) e formatando para o frontend
+    let notesArray = [];
+    if (lead.notes) {
+        // Se notes é uma string simples (como a coluna TEXT armazena), transforma em array de objeto para o frontend
+        if (typeof lead.notes === 'string') {
+            try {
+                // Tenta fazer parse se for JSON (caso o frontend tenha salvo assim)
+                notesArray = JSON.parse(lead.notes);
+            } catch {
+                // Se for string simples, cria um objeto nota básico
+                notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
+            }
+        } else if (Array.isArray(lead.notes)) {
+             // Se for array (o que pode acontecer se o DB converter JSONB)
+            notesArray = lead.notes;
+        }
+    }
     
-    // As notas vêm da metadata.notes, que é um array de strings
-    const notesArray = Array.isArray(metadata.notes) ? metadata.notes : [];
-
-    // O frontend espera um array de objetos { text: string, timestamp: number }
-    const notesFormatted = notesArray.map((noteText, index) => ({ 
-        text: noteText, 
-        // Cria um timestamp básico para ordenação reversa (mais recentes primeiro)
-        timestamp: lead.updated_at ? new Date(lead.updated_at).getTime() - (notesArray.length - 1 - index) * 1000 : 0
-    }));
-
+    // Mapeamento CRÍTICO: DB (snake_case) para Frontend (camelCase)
     return {
         _id: lead.id,
         name: lead.name,
@@ -31,26 +37,32 @@ const formatLeadResponse = (lead) => {
         origin: lead.origin,
         ownerId: lead.owner_id,
         
-        // Campos de metadata
-        email: metadata.email || '', // LENDO EMAIL DA METADATA
-        uc: metadata.uc || '',
-        avgConsumption: metadata.avgConsumption || null,
-        estimatedSavings: metadata.estimatedSavings || null,
-        qsa: metadata.qsa || null,
-        notes: notesFormatted, 
+        // Campos customizados lidos diretamente das colunas do DB
+        email: lead.email || '',
+        uc: lead.uc || '',
+        avgConsumption: lead.avg_consumption || null,      // DB: avg_consumption -> Frontend: avgConsumption
+        estimatedSavings: lead.estimated_savings || null,  // DB: estimated_savings -> Frontend: estimatedSavings
+        qsa: lead.qsa || '',
+        lat: lead.lat || null,
+        lng: lead.lng || null,
+        notes: notesArray, // Array formatado
         
         created_at: lead.created_at,
         updated_at: lead.updated_at,
     };
 };
 
-
 // ===========================
 // 📝 Cria um novo lead (POST /api/v1/leads)
 // ===========================
 const createLead = async (req, res) => {
-    const { name, phone, document, address, status, origin, email, uc, avgConsumption, estimatedSavings, notes, qsa } = req.body;
-    const ownerId = req.user.id; 
+    // Extrai todos os 11 campos relevantes do body
+    const { 
+        name, phone, document, address, origin, status, email, 
+        avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng
+    } = req.body;
+    
+    const ownerId = req.user.id;
 
     if (!name || !phone || !status || !origin) {
         return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
@@ -58,14 +70,14 @@ const createLead = async (req, res) => {
 
     try {
         const newLead = await Lead.create({ 
-            name, phone, document, address, status, origin, ownerId, email,
-            uc, avgConsumption, estimatedSavings, notes, qsa 
+            name, phone, document, address, status, origin, ownerId, 
+            email, uc, avgConsumption, estimatedSavings, notes, qsa, lat, lng 
         });
 
-        res.status(201).json(formatLeadResponse(newLead));
+        res.status(201).json(formatLeadResponse(newLead)); 
 
     } catch (error) {
-        if (error.code === '23505') { 
+        if (error.code === '23505') {
             return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
         }
         console.error("Erro ao criar lead:", error.message);
@@ -75,13 +87,52 @@ const createLead = async (req, res) => {
 
 
 // ===========================
-// 🧩 Lista todos os leads (GET /api/v1/leads) - ESSA FUNÇÃO ESTAVA FALTANDO OU COM PROBLEMAS
+// 📝 Atualiza um lead existente (PUT /api/v1/leads/:id)
+// ===========================
+const updateLead = async (req, res) => {
+    const { id } = req.params;
+    
+    // Extrai todos os 11 campos relevantes do body
+    const { 
+        name, phone, document, address, status, origin, email, 
+        avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng 
+    } = req.body;
+    
+    const ownerId = req.user.id; 
+
+    if (!name || !phone || !status || !origin) {
+        return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
+    }
+
+    try {
+        const updatedLead = await Lead.update(id, { 
+            name, phone, document, address, status, origin, ownerId, 
+            email, avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng 
+        });
+
+        if (!updatedLead) {
+            return res.status(404).json({ error: 'Lead não encontrado ou não autorizado.' });
+        }
+
+        res.status(200).json(formatLeadResponse(updatedLead)); 
+
+    } catch (error) {
+        if (error.code === '23505') {
+            return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
+        }
+        console.error("Erro CRÍTICO ao atualizar lead (Log da DB):", error.message);
+        res.status(500).json({ error: "Erro interno do servidor ao atualizar lead. Verifique logs do backend." });
+    }
+};
+
+// ===========================
+// 🧩 Lista todos os leads (Admin) ou leads próprios (User)
 // ===========================
 const getAllLeads = async (req, res) => {
     try {
-        // Assume-se que 'req.user' é fornecido pelo middleware 'protect'
+        // O modelo Lead.findAll já trata o filtro de Admin/User
         const isAdmin = req.user.role === 'Admin';
-        const ownerId = req.user.id;
+        const ownerId = req.user.id; 
 
         const leads = await Lead.findAll(ownerId, isAdmin);
         
@@ -95,85 +146,68 @@ const getAllLeads = async (req, res) => {
     }
 };
 
-
 // ===========================
-// 📝 Atualiza um lead existente (PUT /api/v1/leads/:id) - CORRIGIDO (Manutenção do método que corrigiu o erro 500)
+// 👁️ Busca lead por ID (GET /api/v1/leads/:id)
 // ===========================
-const updateLead = async (req, res) => {
+const getLeadById = async (req, res) => {
     const { id } = req.params;
-    
-    // CRÍTICO: Garante que TODOS os campos enviados pelo frontend são extraídos.
-    const { 
-        name, phone, document, address, status, origin, email, 
-        avgConsumption, estimatedSavings, notes, uc, qsa 
-    } = req.body;
-    
-    const ownerId = req.user.id; // Vem do JWT
-
-    // Validação básica
-    if (!name || !phone || !status || !origin) {
-        return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
-    }
 
     try {
-        // Chama o método 'update' do modelo Lead
-        const updatedLead = await Lead.update(id, { 
-            name, phone, document, address, status, origin, ownerId, 
-            email, 
-            // Coerção de tipos antes de enviar ao modelo
-            avgConsumption: avgConsumption ? parseFloat(avgConsumption) : null, 
-            estimatedSavings: estimatedSavings ? parseFloat(estimatedSavings) : null,
-            notes, uc, qsa 
-        });
+        const lead = await Lead.findById(id);
 
-        if (!updatedLead) {
-            return res.status(404).json({ error: 'Lead não encontrado ou não autorizado.' });
-        }
-
-        res.status(200).json(formatLeadResponse(updatedLead)); 
-
-    } catch (error) {
-        if (error.code === '23505') {
-            return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
-        }
-        // Este é o erro 500 que você está vendo. A mensagem de erro da DB está no error.message
-        console.error("Erro CRÍTICO ao atualizar lead (Log da DB):", error.message);
-        res.status(500).json({ error: "Erro interno do servidor ao atualizar lead. Verifique logs do backend." });
-    }
-};
-
-// ===========================
-// 💧 Altera APENAS o status (PUT /api/v1/leads/:id/status)
-// ===========================
-const updateLeadStatus = async (req, res) => {
-    const { id } = req.params;
-    const { status: newStatus } = req.body;
-
-    if (!newStatus) {
-        return res.status(400).json({ error: 'Novo status é obrigatório.' });
-    }
-
-    try {
-        const updatedLead = await Lead.updateStatus(id, newStatus);
-
-        if (!updatedLead) {
+        if (!lead) {
             return res.status(404).json({ error: 'Lead não encontrado.' });
         }
 
-        res.status(200).json(formatLeadResponse(updatedLead));
+        // Validação de acesso (Se não for Admin, verifica se é o owner)
+        if (req.user.role !== 'Admin' && lead.owner_id !== req.user.id) {
+            return res.status(403).json({ error: 'Acesso negado. Você não é o proprietário deste lead.' });
+        }
 
+        res.status(200).json(formatLeadResponse(lead));
     } catch (error) {
-        console.error("Erro ao atualizar status do lead:", error.message);
-        res.status(500).json({ error: "Erro interno do servidor ao atualizar status." });
+        console.error("Erro ao buscar lead por ID:", error.message);
+        res.status(500).json({ error: "Erro interno do servidor ao buscar lead." });
     }
 };
 
 // ===========================
-// 🚀 Exportação CRÍTICA
+// 🗑️ Exclui um lead (DELETE /api/v1/leads/:id)
 // ===========================
+const deleteLead = async (req, res) => {
+    const { id } = req.params;
+
+    try {
+        // Implementar checagem de propriedade antes de deletar
+        const lead = await Lead.findById(id);
+        if (!lead) {
+            return res.status(404).json({ error: 'Lead não encontrado.' });
+        }
+        if (req.user.role !== 'Admin' && lead.owner_id !== req.user.id) {
+            return res.status(403).json({ error: 'Acesso negado. Você não tem permissão para excluir este lead.' });
+        }
+
+        const wasDeleted = await Lead.delete(id);
+
+        if (!wasDeleted) {
+            // Este caso deve ser raro se a checagem acima passou
+            return res.status(404).json({ error: 'Lead não encontrado.' });
+        }
+
+        res.status(200).json({ message: 'Lead excluído com sucesso.' });
+    } catch (error) {
+        console.error("Erro ao excluir lead:", error.message);
+        res.status(500).json({ error: "Erro interno do servidor ao excluir lead." });
+    }
+};
+
+
 module.exports = {
     createLead,
-    getAllLeads, // <-- AGORA DEFINIDA E EXPORTADA CORRETAMENTE
+    getAllLeads,
+    getLeadById,
     updateLead,
-    updateLeadStatus,
+    deleteLead,
+    // Se você tiver outras funções como updateStatus, inclua-as aqui:
+    // updateLeadStatus, 
 };
