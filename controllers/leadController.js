@@ -8,28 +8,33 @@ const Lead = require('../models/Lead');
 // 🛠️ Função auxiliar para formatar um lead
 // ===========================
 const formatLeadResponse = (lead) => {
-    // CRÍTICO: Lendo 'notes' (coluna TEXT que contém string JSON) e convertendo para Array de Objetos para o frontend
+    // CRÍTICO: Lendo 'notes' (coluna TEXT que deve conter string JSON) e convertendo para Array de Objetos para o frontend
     let notesArray = [];
     if (lead.notes && typeof lead.notes === 'string') {
         try {
-            // Tenta converter a string do DB de volta para Array de Objetos JS
+            // Tenta converter a string do DB (que deve ser JSON) de volta para Array de Objetos JS
             const parsedNotes = JSON.parse(lead.notes);
+            
+            // Verifica se o resultado é um array válido
             if (Array.isArray(parsedNotes)) {
-                notesArray = parsedNotes;
+                notesArray = parsedNotes.filter(note => note && note.text); // Filtra por segurança
             } else {
-                 // Se o parse falhar, trata como uma única nota simples (caso de leads antigos)
+                 // Se o parse foi um objeto, trata como uma única nota (pode acontecer com strings antigas)
                 notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
             }
         } catch (e) {
-            // Se o parse falhar, trata como uma única nota simples (caso de strings danificadas/antigas)
+            // Se o parse falhar (ex: a string danificada que você viu), trata como uma única nota simples
+            console.warn(`Aviso: Falha ao fazer JSON.parse na nota do Lead ID ${lead.id}. Salvando como nota única.`);
             notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
         }
     } else if (Array.isArray(lead.notes)) {
-         // Caso a coluna fosse JSONB e o driver já tivesse feito o parse
-        notesArray = lead.notes;
+         // Caso fallback se já for array (pode ocorrer em JSONB ou se for um objeto novo)
+        notesArray = lead.notes.filter(note => note && note.text);
     }
-
-
+    
+    // Filtra notesArray para limpar qualquer resquício de strings danificadas.
+    // Garante que o notes sempre será um Array de Objetos para o Frontend
+    
     // Mapeamento CRÍTICO: DB (snake_case) para Frontend (camelCase)
     return {
         _id: lead.id,
@@ -49,7 +54,7 @@ const formatLeadResponse = (lead) => {
         qsa: lead.qsa || '',
         lat: lead.lat || null,
         lng: lead.lng || null,
-        notes: notesArray, // Array formatado
+        notes: notesArray, // Array de objetos formatado
         
         created_at: lead.created_at,
         updated_at: lead.updated_at,
@@ -72,9 +77,9 @@ const createLead = async (req, res) => {
     }
 
     try {
-        // Se notes vier como array do frontend (o que é ideal), o modelo o espera como string para a coluna TEXT.
-        // Se notes não foi enviado (undefined), o modelo já trata.
-        const notesToSave = notes && Array.isArray(notes) ? JSON.stringify(notes) : notes;
+        // Se notes vier como Array de Objetos do frontend, ele DEVE ter sido stringificado no frontend.
+        // Se notes não for uma string (ou for undefined), vamos stringificar um array vazio por segurança.
+        const notesToSave = typeof notes === 'string' ? notes : (notes ? JSON.stringify(notes) : '[]');
 
         const newLead = await Lead.create({ 
             name, phone, document, address, status, origin, ownerId, 
@@ -111,11 +116,13 @@ const updateLead = async (req, res) => {
     }
 
     try {
-        // CRÍTICO: O frontend deve enviar notes como JSON.stringified string.
-        // Passamos notes diretamente para o modelo que o salvará na coluna TEXT.
+        // CRÍTICO: notes deve ser uma string JSON válida vinda do frontend para a coluna TEXT.
+        // Se por algum motivo veio como objeto/array, o frontend precisa ser corrigido, mas stringificamos para não falhar a query.
+        const notesToSave = typeof notes === 'string' ? notes : JSON.stringify(notes || []);
+
         const updatedLead = await Lead.update(id, { 
             name, phone, document, address, status, origin, ownerId, 
-            email, avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng 
+            email, avgConsumption, estimatedSavings, notes: notesToSave, uc, qsa, lat, lng 
         });
 
         if (!updatedLead) {
