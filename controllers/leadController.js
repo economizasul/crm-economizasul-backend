@@ -102,21 +102,28 @@ const getAllLeads = async (req, res) => {
 const updateLead = async (req, res) => {
     const { id } = req.params;
     
+    // CRÍTICO: Garante que TODOS os campos enviados pelo frontend são extraídos.
     const { 
         name, phone, document, address, status, origin, email, 
         avgConsumption, estimatedSavings, notes, uc, qsa 
     } = req.body;
     
-    const ownerId = req.user.id; 
+    const ownerId = req.user.id; // Vem do JWT
 
+    // Validação básica
     if (!name || !phone || !status || !origin) {
         return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
     }
 
     try {
+        // Chama o método 'update' do modelo Lead
         const updatedLead = await Lead.update(id, { 
             name, phone, document, address, status, origin, ownerId, 
-            email, avgConsumption, estimatedSavings, notes, uc, qsa 
+            email, 
+            // Coerção de tipos antes de enviar ao modelo
+            avgConsumption: avgConsumption ? parseFloat(avgConsumption) : null, 
+            estimatedSavings: estimatedSavings ? parseFloat(estimatedSavings) : null,
+            notes, uc, qsa 
         });
 
         if (!updatedLead) {
@@ -129,6 +136,7 @@ const updateLead = async (req, res) => {
         if (error.code === '23505') {
             return res.status(400).json({ error: 'Um lead com o telefone/documento fornecido já existe.' });
         }
+        // Este é o erro 500 que você está vendo. A mensagem de erro da DB está no error.message
         console.error("Erro CRÍTICO ao atualizar lead (Log da DB):", error.message);
         res.status(500).json({ error: "Erro interno do servidor ao atualizar lead. Verifique logs do backend." });
     }
