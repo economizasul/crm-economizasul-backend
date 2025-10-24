@@ -2,30 +2,34 @@
 
 const { pool } = require('../config/db');
 const axios = require('axios');
-const Lead = require('../models/Lead'); // Importa o modelo Lead
+const Lead = require('../models/Lead'); 
 
 // ===========================
 // 🛠️ Função auxiliar para formatar um lead
 // ===========================
 const formatLeadResponse = (lead) => {
-    // ATENÇÃO: Lendo 'notes' (coluna TEXT) e formatando para o frontend
+    // CRÍTICO: Lendo 'notes' (coluna TEXT que contém string JSON) e convertendo para Array de Objetos para o frontend
     let notesArray = [];
-    if (lead.notes) {
-        // Se notes é uma string simples (como a coluna TEXT armazena), transforma em array de objeto para o frontend
-        if (typeof lead.notes === 'string') {
-            try {
-                // Tenta fazer parse se for JSON (caso o frontend tenha salvo assim)
-                notesArray = JSON.parse(lead.notes);
-            } catch {
-                // Se for string simples, cria um objeto nota básico
+    if (lead.notes && typeof lead.notes === 'string') {
+        try {
+            // Tenta converter a string do DB de volta para Array de Objetos JS
+            const parsedNotes = JSON.parse(lead.notes);
+            if (Array.isArray(parsedNotes)) {
+                notesArray = parsedNotes;
+            } else {
+                 // Se o parse falhar, trata como uma única nota simples (caso de leads antigos)
                 notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
             }
-        } else if (Array.isArray(lead.notes)) {
-             // Se for array (o que pode acontecer se o DB converter JSONB)
-            notesArray = lead.notes;
+        } catch (e) {
+            // Se o parse falhar, trata como uma única nota simples (caso de strings danificadas/antigas)
+            notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
         }
+    } else if (Array.isArray(lead.notes)) {
+         // Caso a coluna fosse JSONB e o driver já tivesse feito o parse
+        notesArray = lead.notes;
     }
-    
+
+
     // Mapeamento CRÍTICO: DB (snake_case) para Frontend (camelCase)
     return {
         _id: lead.id,
@@ -40,8 +44,8 @@ const formatLeadResponse = (lead) => {
         // Campos customizados lidos diretamente das colunas do DB
         email: lead.email || '',
         uc: lead.uc || '',
-        avgConsumption: lead.avg_consumption || null,      // DB: avg_consumption -> Frontend: avgConsumption
-        estimatedSavings: lead.estimated_savings || null,  // DB: estimated_savings -> Frontend: estimatedSavings
+        avgConsumption: lead.avg_consumption || null,      
+        estimatedSavings: lead.estimated_savings || null,  
         qsa: lead.qsa || '',
         lat: lead.lat || null,
         lng: lead.lng || null,
@@ -56,7 +60,6 @@ const formatLeadResponse = (lead) => {
 // 📝 Cria um novo lead (POST /api/v1/leads)
 // ===========================
 const createLead = async (req, res) => {
-    // Extrai todos os 11 campos relevantes do body
     const { 
         name, phone, document, address, origin, status, email, 
         avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng
@@ -69,9 +72,13 @@ const createLead = async (req, res) => {
     }
 
     try {
+        // Se notes vier como array do frontend (o que é ideal), o modelo o espera como string para a coluna TEXT.
+        // Se notes não foi enviado (undefined), o modelo já trata.
+        const notesToSave = notes && Array.isArray(notes) ? JSON.stringify(notes) : notes;
+
         const newLead = await Lead.create({ 
             name, phone, document, address, status, origin, ownerId, 
-            email, uc, avgConsumption, estimatedSavings, notes, qsa, lat, lng 
+            email, uc, avgConsumption, estimatedSavings, notes: notesToSave, qsa, lat, lng 
         });
 
         res.status(201).json(formatLeadResponse(newLead)); 
@@ -92,7 +99,6 @@ const createLead = async (req, res) => {
 const updateLead = async (req, res) => {
     const { id } = req.params;
     
-    // Extrai todos os 11 campos relevantes do body
     const { 
         name, phone, document, address, status, origin, email, 
         avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng 
@@ -105,6 +111,8 @@ const updateLead = async (req, res) => {
     }
 
     try {
+        // CRÍTICO: O frontend deve enviar notes como JSON.stringified string.
+        // Passamos notes diretamente para o modelo que o salvará na coluna TEXT.
         const updatedLead = await Lead.update(id, { 
             name, phone, document, address, status, origin, ownerId, 
             email, avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng 
@@ -130,12 +138,10 @@ const updateLead = async (req, res) => {
 // ===========================
 const getAllLeads = async (req, res) => {
     try {
-        // O modelo Lead.findAll já trata o filtro de Admin/User
         const isAdmin = req.user.role === 'Admin';
         const ownerId = req.user.id; 
 
         const leads = await Lead.findAll(ownerId, isAdmin);
-        
         const formattedLeads = leads.map(formatLeadResponse);
         
         res.status(200).json(formattedLeads);
@@ -159,7 +165,6 @@ const getLeadById = async (req, res) => {
             return res.status(404).json({ error: 'Lead não encontrado.' });
         }
 
-        // Validação de acesso (Se não for Admin, verifica se é o owner)
         if (req.user.role !== 'Admin' && lead.owner_id !== req.user.id) {
             return res.status(403).json({ error: 'Acesso negado. Você não é o proprietário deste lead.' });
         }
@@ -178,7 +183,6 @@ const deleteLead = async (req, res) => {
     const { id } = req.params;
 
     try {
-        // Implementar checagem de propriedade antes de deletar
         const lead = await Lead.findById(id);
         if (!lead) {
             return res.status(404).json({ error: 'Lead não encontrado.' });
@@ -190,7 +194,6 @@ const deleteLead = async (req, res) => {
         const wasDeleted = await Lead.delete(id);
 
         if (!wasDeleted) {
-            // Este caso deve ser raro se a checagem acima passou
             return res.status(404).json({ error: 'Lead não encontrado.' });
         }
 
@@ -208,6 +211,4 @@ module.exports = {
     getLeadById,
     updateLead,
     deleteLead,
-    // Se você tiver outras funções como updateStatus, inclua-as aqui:
-    // updateLeadStatus, 
 };
