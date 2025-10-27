@@ -15,7 +15,6 @@ const searchUser = async (req, res) => {
     
     const { email, name } = req.query;
 
-    // PASSO DE DEBUG: Adicione este console.log para ver o que o backend está recebendo.
     console.log(`[BUSCA USER] Parâmetros recebidos: Email=${email}, Nome=${name}`);
     
     if (!email && !name) {
@@ -24,11 +23,13 @@ const searchUser = async (req, res) => {
 
     try {
         let result;
-        // CRÍTICO: Garante o alias para 'isActive' (is_active AS "isActive")
-        const selectFields = 'id, name, email, phone, role, is_active AS "isActive"';
+        
+        // CRÍTICO: 'phone' reintroduzido na seleção
+        // is_active AS "isActive" para camelCase no frontend
+        const selectFields = 'id, name, email, phone, role, is_active AS "isActive"'; 
         
         if (email) {
-            // CORREÇÃO CRÍTICA: Usa LOWER() para tornar a busca de email case-insensitive.
+            // Usa LOWER() para tornar a busca de email case-insensitive
             result = await pool.query(`SELECT ${selectFields} FROM users WHERE LOWER(email) = LOWER($1)`, [email]);
         } else if (name) {
             // Busca por Nome (usa ILIKE)
@@ -44,7 +45,6 @@ const searchUser = async (req, res) => {
             return res.status(404).json({ error: "Usuário não encontrado. Você pode criar um novo com esta informação." });
         }
         
-        // Renomeia o ID
         user._id = user.id;
         delete user.id; 
         
@@ -56,22 +56,25 @@ const searchUser = async (req, res) => {
     }
 };
 
-// @desc    Atualizar um usuário (nome, telefone, role, isActive)
+// @desc    Atualizar um usuário (nome, email, phone, role, isActive)
 const updateUser = async (req, res) => {
     const { id } = req.params;
+    // CRÍTICO: 'phone' reintroduzido no req.body
     const { name, email, phone, role, isActive } = req.body;
     
+    // CRÍTICO: 'phone' reintroduzido na validação
     if (!name || !email || !phone || !role || isActive === undefined) {
-        return res.status(400).json({ error: 'Por favor, forneça todos os campos obrigatórios, incluindo o status de ativo.' });
+        return res.status(400).json({ error: 'Por favor, forneça todos os campos obrigatórios.' });
     }
 
     try {
-        // Assegura o uso de is_active e updated_at no DB
+        // CRÍTICO: 'phone = $3' reintroduzido na query
+        // E o retorno também usa 'phone'
         const result = await pool.query(
             `UPDATE users 
              SET name = $1, email = $2, phone = $3, role = $4, is_active = $5, updated_at = NOW()
-             WHERE id = $6 
-             RETURNING id, name, email, phone, role, is_active AS "isActive"`,
+             WHERE id = $6 RETURNING id, name, email, phone, role, is_active AS "isActive"`,
+            // Parâmetros: name, email, phone, role, isActive, id (total de 6 parâmetros)
             [name, email, phone, role, isActive, id] 
         );
 
