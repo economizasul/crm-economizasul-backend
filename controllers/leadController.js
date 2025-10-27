@@ -12,28 +12,20 @@ const formatLeadResponse = (lead) => {
     let notesArray = [];
     if (lead.notes && typeof lead.notes === 'string') {
         try {
-            // Tenta converter a string do DB (que deve ser JSON) de volta para Array de Objetos JS
             const parsedNotes = JSON.parse(lead.notes);
             
-            // Verifica se o resultado é um array válido
             if (Array.isArray(parsedNotes)) {
-                notesArray = parsedNotes.filter(note => note && note.text); // Filtra por segurança
+                notesArray = parsedNotes.filter(note => note && note.text); 
             } else {
-                 // Se o parse foi um objeto, trata como uma única nota (pode acontecer com strings antigas)
                 notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
             }
         } catch (e) {
-            // Se o parse falhar (ex: a string danificada que você viu), trata como uma única nota simples
             console.warn(`Aviso: Falha ao fazer JSON.parse na nota do Lead ID ${lead.id}. Salvando como nota única.`);
             notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
         }
     } else if (Array.isArray(lead.notes)) {
-         // Caso fallback se já for array (pode ocorrer em JSONB ou se for um objeto novo)
         notesArray = lead.notes.filter(note => note && note.text);
     }
-    
-    // Filtra notesArray para limpar qualquer resquício de strings danificadas.
-    // Garante que o notes sempre será um Array de Objetos para o Frontend
     
     // Mapeamento CRÍTICO: DB (snake_case) para Frontend (camelCase)
     return {
@@ -44,9 +36,8 @@ const formatLeadResponse = (lead) => {
         address: lead.address,
         status: lead.status, 
         origin: lead.origin,
-        ownerId: lead.owner_id, // O ID do proprietário atual
+        ownerId: lead.owner_id,
         
-        // Campos customizados lidos diretamente das colunas do DB
         email: lead.email || '',
         uc: lead.uc || '',
         avgConsumption: lead.avg_consumption || null,      
@@ -70,21 +61,25 @@ const createLead = async (req, res) => {
         avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng
     } = req.body;
     
-    // O usuário que cria é o proprietário inicial
-    const ownerId = req.user.id; 
+    const ownerId = req.user.id;
 
     if (!name || !phone || !status || !origin) {
         return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
     }
 
     try {
-        // Se notes vier como Array de Objetos do frontend, ele DEVE ter sido stringificado no frontend.
-        // Se notes não for uma string (ou for undefined), vamos stringificar um array vazio por segurança.
         const notesToSave = typeof notes === 'string' ? notes : (notes ? JSON.stringify(notes) : '[]');
+        
+        // 💡 Sanitização para Create (Prevenindo o NaN se o frontend falhar na conversão inicial)
+        const sanitizedAvgConsumption = isNaN(parseFloat(avgConsumption)) || avgConsumption === null || avgConsumption === '' ? null : parseFloat(avgConsumption);
+        const sanitizedEstimatedSavings = isNaN(parseFloat(estimatedSavings)) || estimatedSavings === null || estimatedSavings === '' ? null : parseFloat(estimatedSavings);
 
         const newLead = await Lead.create({ 
-            name, phone, document, address, status, origin, ownerId, // ownerId inicial
-            email, uc, avgConsumption, estimatedSavings, notes: notesToSave, qsa, lat, lng 
+            name, phone, document, address, status, origin, ownerId, 
+            email, uc, 
+            avgConsumption: sanitizedAvgConsumption, 
+            estimatedSavings: sanitizedEstimatedSavings, 
+            notes: notesToSave, qsa, lat, lng 
         });
 
         res.status(201).json(formatLeadResponse(newLead)); 
@@ -108,38 +103,47 @@ const updateLead = async (req, res) => {
     const { 
         name, phone, document, address, status, origin, email, 
         avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng,
-        assignedToId // 💡 NOVO: Captura o ID para quem o lead será transferido
+        assignedToId // 💡 NOVO: Recebe o ID para transferência
     } = req.body;
     
-    // 🛑 CORREÇÃO DE BUG: Removida a linha `const ownerId = req.user.id;`.
-    // O owner_id NÃO deve ser atualizado automaticamente para o ID do usuário logado.
+    // O ID do novo proprietário é o 'assignedToId' (se enviado por Admin) ou o ID do usuário logado (padrão)
+    // O frontend deve garantir que o assignedToId só é enviado por Admin e que só envia um novo valor se for diferente do atual.
+    const newOwnerId = assignedToId || req.user.id; 
+    const currentUserId = req.user.id;
 
     if (!name || !phone || !status || !origin) {
         return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
     }
 
+    // 💡 CRÍTICO: SANITIZAÇÃO PARA RESOLVER O ERRO "NaN"
+    // Garante que o valor enviado para o DB seja 'null' se for NaN ou vazio
+    const sanitizedAvgConsumption = isNaN(parseFloat(avgConsumption)) || avgConsumption === null || avgConsumption === '' ? null : parseFloat(avgConsumption);
+    const sanitizedEstimatedSavings = isNaN(parseFloat(estimatedSavings)) || estimatedSavings === null || estimatedSavings === '' ? null : parseFloat(estimatedSavings);
+
     try {
-        // CRÍTICO: notes deve ser uma string JSON válida vinda do frontend para a coluna TEXT.
         const notesToSave = typeof notes === 'string' ? notes : JSON.stringify(notes || []);
 
-        // Objeto base com todos os campos a serem atualizados, exceto o ownerId
-        const updateFields = { 
+        // 💡 Verificação de permissão: Admins podem editar, vendedores só podem editar seus próprios leads.
+        const currentLead = await Lead.findById(id);
+        if (!currentLead) {
+             return res.status(404).json({ error: 'Lead não encontrado.' });
+        }
+        
+        // Verifica se o usuário é Admin OU se é o proprietário atual
+        const canUpdate = req.user.role === 'Admin' || currentLead.owner_id === currentUserId;
+
+        if (!canUpdate) {
+            return res.status(403).json({ error: 'Acesso negado. Você não é o proprietário deste lead nem administrador.' });
+        }
+        
+        const updatedLead = await Lead.update(id, { 
             name, phone, document, address, status, origin, 
-            email, avgConsumption, estimatedSavings, notes: notesToSave, uc, qsa, lat, lng 
-        };
-        
-        // 💡 LÓGICA DE TRANSFERÊNCIA: 
-        // Se um `assignedToId` for fornecido e o usuário logado for um Admin, atualizamos o `ownerId`.
-        // Assumimos que a role 'Admin' ou 'admin' tem permissão para transferir.
-        if (assignedToId && (req.user.role === 'Admin' || req.user.role === 'admin')) { 
-            // O modelo `Lead` usa `ownerId`
-            updateFields.ownerId = assignedToId; 
-        } 
-        
-        // 🛑 PREVENÇÃO DO BUG: Se o Admin (ou qualquer usuário) mudar APENAS a fase, 
-        // mas não houver `assignedToId`, o `ownerId` não é enviado para o DB e é PRESERVADO.
-        
-        const updatedLead = await Lead.update(id, updateFields); 
+            ownerId: newOwnerId, // 💡 Usa o novo ID para transferência (se fornecido)
+            email, 
+            avgConsumption: sanitizedAvgConsumption, // 💡 Corrigido
+            estimatedSavings: sanitizedEstimatedSavings, // 💡 Corrigido
+            notes: notesToSave, uc, qsa, lat, lng 
+        });
 
         if (!updatedLead) {
             return res.status(404).json({ error: 'Lead não encontrado ou não autorizado.' });
@@ -161,9 +165,6 @@ const updateLead = async (req, res) => {
 // ===========================
 const getAllLeads = async (req, res) => {
     try {
-        // NOTA: Para o usuário Nei (não Admin) continuar vendo o lead, o `Lead.findAll` deve estar 
-        // consultando leads onde o usuário logado é o owner ATUAL OU o criador.
-        // Assumindo que o Lead Model agora gerencia isso com a correção em `updateLead`.
         const isAdmin = req.user.role === 'Admin';
         const ownerId = req.user.id; 
 
@@ -191,13 +192,7 @@ const getLeadById = async (req, res) => {
             return res.status(404).json({ error: 'Lead não encontrado.' });
         }
 
-        // A lógica de permissão deve ser ajustada no seu Lead.findById ou aqui:
-        // O usuário Admin pode ver. Um usuário comum (user) DEVE ver se for o owner ATUAL OU o criador.
-        // Assumimos que a tabela LEAD tem um campo `creator_id` que não foi fornecido. 
-        // Se `lead.owner_id` for o único campo, este check deve ser mantido:
         if (req.user.role !== 'Admin' && lead.owner_id !== req.user.id) {
-            // Se você tiver um campo creator_id no lead, adicione aqui: 
-            // && lead.creator_id !== req.user.id
             return res.status(403).json({ error: 'Acesso negado. Você não é o proprietário deste lead.' });
         }
 
@@ -236,26 +231,23 @@ const deleteLead = async (req, res) => {
     }
 };
 
-
 // ===========================
-// 👥 Busca lista de usuários para reatribuição (GET /api/v1/leads/users/reassignment)
+// 👥 Lista usuários para reatribuição (GET /api/v1/leads/users/reassignment)
 // ===========================
 const getUsersForReassignment = async (req, res) => {
-    // 💡 Usa o pool para buscar todos os usuários (exceto talvez contas de sistema, se houver)
-    try {
-        // Busca ID e Nome de todos os usuários para a reatribuição
-        const result = await pool.query('SELECT id, name FROM users ORDER BY name ASC');
-        
-        // Formata a resposta
-        const users = result.rows.map(user => ({
-            id: user.id,
-            name: user.name,
-        }));
+    // 💡 CRÍTICO: Apenas Admin pode ver esta lista
+    if (req.user.role !== 'Admin') {
+        return res.status(403).json({ error: 'Acesso negado. Apenas administradores podem listar usuários para reatribuição.' });
+    }
 
-        res.json(users);
+    try {
+        // Busca todos os usuários, exceto a senha
+        // Assumindo que apenas 'Admin' e 'User' (Vendedor) podem receber leads.
+        const result = await pool.query('SELECT id, name, email, role FROM users WHERE role IN ($1, $2) ORDER BY name', ['Admin', 'User']);
+        res.status(200).json(result.rows);
     } catch (error) {
-        console.error("Erro ao buscar usuários para reatribuição:", error.message);
-        res.status(500).json({ error: 'Erro interno do servidor ao buscar usuários.' });
+        console.error("Erro ao listar usuários para reatribuição:", error.message);
+        res.status(500).json({ error: "Erro interno do servidor ao listar usuários." });
     }
 };
 
@@ -266,5 +258,5 @@ module.exports = {
     getLeadById,
     updateLead,
     deleteLead,
-    getUsersForReassignment, // 💡 EXPORTAÇÃO DA NOVA FUNÇÃO
+    getUsersForReassignment, // 💡 NOVO: Exporta a função
 };
