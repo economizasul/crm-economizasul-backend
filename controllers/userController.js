@@ -16,7 +16,7 @@ const searchUser = async (req, res) => {
     const { email, name } = req.query;
 
     // PASSO DE DEBUG: Adicione este console.log para ver o que o backend está recebendo.
-    console.log(`Parâmetros de busca recebidos: Email=${email}, Nome=${name}`);
+    console.log(`[BUSCA USER] Parâmetros recebidos: Email=${email}, Nome=${name}`);
     
     if (!email && !name) {
         return res.status(400).json({ error: 'Forneça um nome ou e-mail para a busca.' });
