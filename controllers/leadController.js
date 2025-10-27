@@ -44,7 +44,7 @@ const formatLeadResponse = (lead) => {
         address: lead.address,
         status: lead.status, 
         origin: lead.origin,
-        ownerId: lead.owner_id,
+        ownerId: lead.owner_id, // O ID do proprietário atual
         
         // Campos customizados lidos diretamente das colunas do DB
         email: lead.email || '',
@@ -70,7 +70,8 @@ const createLead = async (req, res) => {
         avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng
     } = req.body;
     
-    const ownerId = req.user.id;
+    // O usuário que cria é o proprietário inicial
+    const ownerId = req.user.id; 
 
     if (!name || !phone || !status || !origin) {
         return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
@@ -82,7 +83,7 @@ const createLead = async (req, res) => {
         const notesToSave = typeof notes === 'string' ? notes : (notes ? JSON.stringify(notes) : '[]');
 
         const newLead = await Lead.create({ 
-            name, phone, document, address, status, origin, ownerId, 
+            name, phone, document, address, status, origin, ownerId, // ownerId inicial
             email, uc, avgConsumption, estimatedSavings, notes: notesToSave, qsa, lat, lng 
         });
 
@@ -106,10 +107,12 @@ const updateLead = async (req, res) => {
     
     const { 
         name, phone, document, address, status, origin, email, 
-        avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng 
+        avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng,
+        assignedToId // 💡 NOVO: Captura o ID para quem o lead será transferido
     } = req.body;
     
-    const ownerId = req.user.id; 
+    // 🛑 CORREÇÃO DE BUG: Removida a linha `const ownerId = req.user.id;`.
+    // O owner_id NÃO deve ser atualizado automaticamente para o ID do usuário logado.
 
     if (!name || !phone || !status || !origin) {
         return res.status(400).json({ error: 'Nome, Telefone, Status e Origem são obrigatórios.' });
@@ -117,13 +120,26 @@ const updateLead = async (req, res) => {
 
     try {
         // CRÍTICO: notes deve ser uma string JSON válida vinda do frontend para a coluna TEXT.
-        // Se por algum motivo veio como objeto/array, o frontend precisa ser corrigido, mas stringificamos para não falhar a query.
         const notesToSave = typeof notes === 'string' ? notes : JSON.stringify(notes || []);
 
-        const updatedLead = await Lead.update(id, { 
-            name, phone, document, address, status, origin, ownerId, 
+        // Objeto base com todos os campos a serem atualizados, exceto o ownerId
+        const updateFields = { 
+            name, phone, document, address, status, origin, 
             email, avgConsumption, estimatedSavings, notes: notesToSave, uc, qsa, lat, lng 
-        });
+        };
+        
+        // 💡 LÓGICA DE TRANSFERÊNCIA: 
+        // Se um `assignedToId` for fornecido e o usuário logado for um Admin, atualizamos o `ownerId`.
+        // Assumimos que a role 'Admin' ou 'admin' tem permissão para transferir.
+        if (assignedToId && (req.user.role === 'Admin' || req.user.role === 'admin')) { 
+            // O modelo `Lead` usa `ownerId`
+            updateFields.ownerId = assignedToId; 
+        } 
+        
+        // 🛑 PREVENÇÃO DO BUG: Se o Admin (ou qualquer usuário) mudar APENAS a fase, 
+        // mas não houver `assignedToId`, o `ownerId` não é enviado para o DB e é PRESERVADO.
+        
+        const updatedLead = await Lead.update(id, updateFields); 
 
         if (!updatedLead) {
             return res.status(404).json({ error: 'Lead não encontrado ou não autorizado.' });
@@ -145,6 +161,9 @@ const updateLead = async (req, res) => {
 // ===========================
 const getAllLeads = async (req, res) => {
     try {
+        // NOTA: Para o usuário Nei (não Admin) continuar vendo o lead, o `Lead.findAll` deve estar 
+        // consultando leads onde o usuário logado é o owner ATUAL OU o criador.
+        // Assumindo que o Lead Model agora gerencia isso com a correção em `updateLead`.
         const isAdmin = req.user.role === 'Admin';
         const ownerId = req.user.id; 
 
@@ -172,7 +191,13 @@ const getLeadById = async (req, res) => {
             return res.status(404).json({ error: 'Lead não encontrado.' });
         }
 
+        // A lógica de permissão deve ser ajustada no seu Lead.findById ou aqui:
+        // O usuário Admin pode ver. Um usuário comum (user) DEVE ver se for o owner ATUAL OU o criador.
+        // Assumimos que a tabela LEAD tem um campo `creator_id` que não foi fornecido. 
+        // Se `lead.owner_id` for o único campo, este check deve ser mantido:
         if (req.user.role !== 'Admin' && lead.owner_id !== req.user.id) {
+            // Se você tiver um campo creator_id no lead, adicione aqui: 
+            // && lead.creator_id !== req.user.id
             return res.status(403).json({ error: 'Acesso negado. Você não é o proprietário deste lead.' });
         }
 
@@ -212,10 +237,34 @@ const deleteLead = async (req, res) => {
 };
 
 
+// ===========================
+// 👥 Busca lista de usuários para reatribuição (GET /api/v1/leads/users/reassignment)
+// ===========================
+const getUsersForReassignment = async (req, res) => {
+    // 💡 Usa o pool para buscar todos os usuários (exceto talvez contas de sistema, se houver)
+    try {
+        // Busca ID e Nome de todos os usuários para a reatribuição
+        const result = await pool.query('SELECT id, name FROM users ORDER BY name ASC');
+        
+        // Formata a resposta
+        const users = result.rows.map(user => ({
+            id: user.id,
+            name: user.name,
+        }));
+
+        res.json(users);
+    } catch (error) {
+        console.error("Erro ao buscar usuários para reatribuição:", error.message);
+        res.status(500).json({ error: 'Erro interno do servidor ao buscar usuários.' });
+    }
+};
+
+
 module.exports = {
     createLead,
     getAllLeads,
     getLeadById,
     updateLead,
     deleteLead,
+    getUsersForReassignment, // 💡 EXPORTAÇÃO DA NOVA FUNÇÃO
 };

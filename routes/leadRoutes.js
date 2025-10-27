@@ -8,8 +8,11 @@ const { protect } = require('../middleware/authMiddleware');
 const { 
     createLead, 
     getAllLeads, 
-    updateLead, // Importa a função de atualização
-    // ... (Outras funções)
+    updateLead, 
+    // 💡 NOVO: Importa a função de listar usuários
+    getUsersForReassignment, 
+    deleteLead, 
+    getLeadById,
 } = require('../controllers/leadController');
 
 // Rotas principais de Leads
@@ -20,10 +23,11 @@ router.route('/')
 // Rotas por ID
 router.route('/:id')
     .put(protect, updateLead) // Rota PUT para atualização
-    // .delete(protect, deleteLead); // Se existir
+    .get(protect, getLeadById)
+    .delete(protect, deleteLead); 
 
-// Outras rotas (se existirem)
-// router.route('/:id/geocode').put(protect, geocodeAddress); 
-// router.route('/:id/schedule').put(protect, scheduleAttendance);
+// 💡 NOVO: Rota para buscar usuários para a função de transferência (Reatribuição)
+router.route('/users/reassignment')
+    .get(protect, getUsersForReassignment); // Adicione um middleware de autorização (e.g., isAdmin) se desejar restringir
 
 module.exports = router;
