@@ -19,23 +19,23 @@ const app = express();
 // Configuração de CORS
 // ===========================
 const allowedOrigins = [
-  "https://crm-frontend-rbza.onrender.com",
-  "https://crm-front-renderer.onrender.com",
-  "http://localhost:5173" // desenvolvimento local
+    "https://crm-frontend-rbza.onrender.com",
+    "https://crm-front-renderer.onrender.com",
+    "http://localhost:5173" // desenvolvimento local
 ];
 
 app.use(
-  cors({
-    origin: function (origin, callback) {
-      if (!origin || allowedOrigins.includes(origin)) {
-        callback(null, true);
-      } else {
-        console.log("🚫 Bloqueado por CORS:", origin);
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
-    credentials: true,
-  })
+    cors({
+        origin: function (origin, callback) {
+            if (!origin || allowedOrigins.includes(origin)) {
+        callback(null, true);
+    } else {
+        console.log("🚫 Bloqueado por CORS:", origin);
+        callback(new Error("Not allowed by CORS"));
+    }
+    },
+    credentials: true,
+    })
 );
 
 // Middleware para JSON
@@ -55,20 +55,21 @@ const pipelineRoutes = require("./routes/pipelineRoutes");
 // Registro de Rotas
 // ===========================
 app.use("/api/v1/auth", authRoutes);
-// 🚨 NOVO: Rota de Gestão de Usuários
 app.use("/api/v1/users", userRoutes); 
 app.use("/api/v1/leads", leadRoutes);
 app.use("/api/v1/clients", clientRoutes);
 app.use("/api/v1/pipeline", pipelineRoutes);
+app.use('/api/v1/reports', require('./routes/reports'));
+app.use('/api/v1/reports', reportsRouter);
 
 // ===========================
 // 🩺 Health Check (teste rápido)
 // ===========================
 app.get("/", (req, res) => {
-  res.json({
-    message: "🚀 API CRM-EconomizaSul funcionando!",
-    status: "ok",
-  });
+    res.json({
+        message: "🚀 API CRM-EconomizaSul funcionando!",
+        status: "ok",
+    });
 });
 
 // ===========================
