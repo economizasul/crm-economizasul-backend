@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const db = require('../db/index.js'); // seu pool do PostgreSQL
+const path = require('path');
+const db = require(path.join(__dirname, '../src/db'));
 
 router.get('/sellers', async (req, res) => {
   try {
