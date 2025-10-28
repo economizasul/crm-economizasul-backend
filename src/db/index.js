@@ -7,13 +7,13 @@ const pool = new Pool({
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 
-// Teste de conexão (opcional, mas útil)
+// Log de conexão
 pool.on('connect', () => {
-  console.log('Conectado ao PostgreSQL');
+  console.log('Conectado ao PostgreSQL com sucesso!');
 });
 
 pool.on('error', (err) => {
-  console.error('Erro na conexão com o banco:', err);
+  console.error('Erro na conexão com o banco:', err.stack);
 });
 
 module.exports = {
