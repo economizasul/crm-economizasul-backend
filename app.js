@@ -10,6 +10,7 @@ const dotenv = require("dotenv");
 const path = require("path");
 const reportsRouter = require('./routes/reports');
 
+
 // Carrega variáveis de ambiente (.env)
 dotenv.config();
 

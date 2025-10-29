@@ -1,7 +1,7 @@
 // src/routes/reports.js
 const express = require('express');
 const router = express.Router();
-const db = require('../db'); // ← IMPORTA O POOL
+const db = require('../src/db');
 
 router.get('/sellers', async (req, res) => {
   try {
