@@ -1,13 +1,14 @@
+// src/routes/reports.js
 const express = require('express');
 const router = express.Router();
-const path = require('path');
-const db = require(path.join(__dirname, '../src/db'));
+const db = require('../db'); // ← IMPORTA O POOL
 
 router.get('/sellers', async (req, res) => {
   try {
-    const result = await pool.query('SELECT id, name FROM sellers ORDER BY name');
+    const result = await db.query('SELECT id, name FROM sellers ORDER BY name');
     res.json(result.rows);
   } catch (err) {
+    console.error('Erro ao buscar vendedores:', err);
     res.status(500).json({ error: err.message });
   }
 });
