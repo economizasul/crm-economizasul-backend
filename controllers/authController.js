@@ -5,10 +5,21 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 
 // Função auxiliar para gerar JWT
-const generateToken = (id) => {
-    return jwt.sign({ id }, process.env.JWT_SECRET, {
-        expiresIn: '30d', // Token expira em 30 dias
-    });
+const generateToken = (user) => {
+    return jwt.sign(
+        {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            relatorios_proprios_only: user.relatorios_proprios_only ?? true,
+            relatorios_todos: user.relatorios_todos ?? false,
+            transferencia_leads: user.transferencia_leads ?? false,
+            acesso_configuracoes: user.acesso_configuracoes ?? false
+        },
+        process.env.JWT_SECRET,
+        { expiresIn: '30d' }
+    );
 };
 
 // @desc    Registrar novo usuário
@@ -78,14 +89,17 @@ const loginUser = async (req, res) => {
         
         // Verifica se o usuário existe e se a senha corresponde
         if (user && await bcrypt.compare(password, user.password)) {
-            // Sucesso no login
             res.json({
                 id: user.id,
                 name: user.name,
                 email: user.email,
                 role: user.role,
-                token: generateToken(user.id),
-            });
+                relatorios_proprios_only: user.relatorios_proprios_only,
+                relatorios_todos: user.relatorios_todos,
+                transferencia_leads: user.transferencia_leads,
+                acesso_configuracoes: user.acesso_configuracoes,
+                token: generateToken(user), // <- PASSA O USER INTEIRO
+    });
         } else {
             // Falha na autenticação (usuário não encontrado ou senha incorreta)
             res.status(401).json({ error: 'Credenciais inválidas.' });

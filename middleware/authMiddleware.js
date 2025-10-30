@@ -1,18 +1,22 @@
-// middleware/authMiddleware.js
-
 const jwt = require('jsonwebtoken');
-const { pool } = require('../config/db.js'); // CORREÇÃO: Desestruturação e extensão .js
+const { pool } = require('../config/db.js');
 
-// Função auxiliar para buscar usuário no DB
 const findUserById = async (id) => {
     try {
-        // CORREÇÃO: Converte o ID (string do token) para Integer.
         const userIdInt = parseInt(id, 10);
-        
-        const result = await pool.query('SELECT id, role FROM users WHERE id = $1', [userIdInt]);
-        return result.rows[0]; 
+        const result = await pool.query(`
+            SELECT 
+                id, name, email, role, 
+                relatorios_proprios_only,
+                relatorios_todos,
+                transferencia_leads,
+                acesso_configuracoes
+            FROM users 
+            WHERE id = $1 AND is_active = true
+        `, [userIdInt]);
+        return result.rows[0];
     } catch (error) {
-        console.error("Erro ao buscar usuário no banco de dados:", error.message);
+        console.error("Erro ao buscar usuário:", error.message);
         return null;
     }
 };
@@ -20,38 +24,32 @@ const findUserById = async (id) => {
 const protect = async (req, res, next) => {
     let token;
 
-    if (req.headers.authorization && req.headers.authorization.startsWith('Bearer')) {
+    if (req.headers.authorization?.startsWith('Bearer')) {
         try {
             token = req.headers.authorization.split(' ')[1];
             const decoded = jwt.verify(token, process.env.JWT_SECRET);
-            
-            // Note: O token pode ter a chave 'id' ou 'userId', dependendo de onde foi gerado.
-            // Aqui estamos assumindo que o token gerado em authController usa 'userId'.
-            const user = await findUserById(decoded.id); 
 
+            const user = await findUserById(decoded.id || decoded.userId);
             if (!user) {
-                return res.status(401).json({ error: "Não autorizado, usuário não encontrado." });
+                return res.status(401).json({ error: "Usuário não encontrado." });
             }
 
             req.user = user;
             next();
         } catch (error) {
-            console.error("Erro na autenticação:", error.message);
-            return res.status(401).json({ error: "Não autorizado, token inválido ou expirado." });
+            return res.status(401).json({ error: "Token inválido ou expirado." });
         }
-    }
-
-    if (!token) {
-        return res.status(401).json({ error: "Não autorizado, token não encontrado no cabeçalho." });
+    } else {
+        return res.status(401).json({ error: "Token não fornecido." });
     }
 };
 
-const admin = (req, res, next) => {
-    if (req.user && req.user.role === 'Admin') {
+const adminOnly = (req, res, next) => {
+    if (req.user?.acesso_configuracoes) {
         next();
     } else {
-        return res.status(403).json({ error: "Não autorizado, requer permissão de Admin." });
+        return res.status(403).json({ error: "Acesso negado: apenas administradores." });
     }
 };
 
-module.exports = { protect, admin };
+module.exports = { protect, adminOnly };

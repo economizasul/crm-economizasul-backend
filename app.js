@@ -52,6 +52,7 @@ const userRoutes = require("./routes/userRoutes");
 const leadRoutes = require("./routes/leadRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const pipelineRoutes = require("./routes/pipelineRoutes");
+const configuracoesRoutes = require('./routes/configuracoes');
 
 // ===========================
 // Registro de Rotas
@@ -63,6 +64,7 @@ app.use("/api/v1/clients", clientRoutes);
 app.use("/api/v1/pipeline", pipelineRoutes);
 app.use('/api/v1/reports', require('./routes/reports'));
 app.use('/api/v1/reports', reportsRouter);
+app.use('/api/v1/configuracoes', configuracoesRoutes);
 
 // ===========================
 // 🩺 Health Check (teste rápido)
