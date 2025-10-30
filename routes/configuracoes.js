@@ -1,59 +1,74 @@
-// routes/configuracoes.js
+// src/routes/configuracoes.js
+
 const express = require('express');
 const router = express.Router();
-const { protect, adminOnly } = require('../middleware/authMiddleware');
-const { pool } = require('../config/db');
+const { protect, authorize } = require('../middleware/auth');
+const db = require('../config/db');
 
-// Listar vendedores com permissões
-router.get('/vendedores', protect, adminOnly, async (req, res) => {
+// LISTAR TODOS OS USUÁRIOS (exceto SuperAdmin, se existir)
+router.get('/vendedores', protect, authorize('Admin'), async (req, res) => {
     try {
-        const result = await pool.query(`
-            SELECT 
-                id, name, email, role,
-                relatorios_proprios_only,
-                relatorios_todos,
-                transferencia_leads
-            FROM users 
-            WHERE role IN ('user', 'Admin')
-            ORDER BY name
-        `);
+        const result = await db.query(
+            `SELECT 
+                id, 
+                name, 
+                email, 
+                role, 
+                relatorios_proprios_only, 
+                relatorios_todos, 
+                transferencia_leads,
+                acesso_configuracoes
+             FROM users 
+             WHERE role != 'SuperAdmin' 
+             ORDER BY name ASC`
+        );
+
         res.json(result.rows);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ error: 'Erro ao carregar vendedores' });
+        console.error('Erro ao listar vendedores:', err);
+        res.status(500).json({ error: 'Erro ao carregar usuários' });
     }
 });
 
-// Atualizar permissões
-router.put('/vendedor/:id', protect, adminOnly, async (req, res) => {
+// ATUALIZAR PERMISSÕES DE UM USUÁRIO
+router.put('/vendedor/:id', protect, authorize('Admin'), async (req, res) => {
     const { id } = req.params;
     const {
         relatorios_proprios_only = true,
         relatorios_todos = false,
-        transferencia_leads = false
+        transferencia_leads = false,
+        acesso_configuracoes = false
     } = req.body;
 
-    // Garante que não tenha ambas as opções de relatório ativas
-    const finalRelProprios = relatorios_todos ? false : relatorios_proprios_only;
-    const finalRelTodos = relatorios_todos;
-
     try {
-        const result = await pool.query(`
-            UPDATE users SET
+        const result = await db.query(
+            `UPDATE users 
+             SET 
                 relatorios_proprios_only = $1,
                 relatorios_todos = $2,
-                transferencia_leads = $3
-            WHERE id = $4
-            RETURNING id, name, email
-        `, [finalRelProprios, finalRelTodos, transferencia_leads, id]);
+                transferencia_leads = $3,
+                acesso_configuracoes = $4
+             WHERE id = $5 AND role != 'SuperAdmin'
+             RETURNING 
+                id, name, email, role,
+                relatorios_proprios_only, relatorios_todos,
+                transferencia_leads, acesso_configuracoes`,
+            [
+                relatorios_proprios_only,
+                relatorios_todos,
+                transferencia_leads,
+                acesso_configuracoes,
+                id
+            ]
+        );
 
         if (result.rowCount === 0) {
-            return res.status(404).json({ error: 'Usuário não encontrado' });
+            return res.status(404).json({ error: 'Usuário não encontrado ou é SuperAdmin' });
         }
 
         res.json(result.rows[0]);
     } catch (err) {
-        console.error(err);
+        console.error('Erro ao atualizar permissões:', err);
         res.status(500).json({ error: 'Erro ao salvar permissões' });
     }
 });

@@ -64,7 +64,7 @@ app.use("/api/v1/clients", clientRoutes);
 app.use("/api/v1/pipeline", pipelineRoutes);
 app.use('/api/v1/reports', require('./routes/reports'));
 app.use('/api/v1/reports', reportsRouter);
-app.use('/api/v1/configuracoes', configuracoesRoutes);
+app.use('/api/v1/configuracoes', require('./routes/configuracoes'));
 
 // ===========================
 // 🩺 Health Check (teste rápido)
