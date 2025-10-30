@@ -52,4 +52,17 @@ const adminOnly = (req, res, next) => {
     }
 };
 
-module.exports = { protect, adminOnly };
+// NOVO: authorize compatível com authorize('Admin')
+const authorize = (...roles) => {
+    return (req, res, next) => {
+        if (!req.user) {
+            return res.status(401).json({ error: "Não autenticado" });
+        }
+        if (!roles.includes(req.user.role)) {
+            return res.status(403).json({ error: `Acesso negado: role ${req.user.role} não autorizado.` });
+        }
+        next();
+    };
+};
+
+module.exports = { protect, adminOnly, authorize };

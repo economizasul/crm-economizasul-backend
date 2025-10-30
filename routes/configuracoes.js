@@ -1,8 +1,10 @@
-// src/routes/configuracoes.js
+// routes/configuracoes.js
 
 const express = require('express');
 const router = express.Router();
-const { protect, authorize } = require('../middleware/auth');
+
+// CORREÇÃO: caminho correto + authorize
+const { protect, authorize } = require('../middleware/authMiddleware');
 const db = require('../config/db');
 
 // LISTAR TODOS OS USUÁRIOS (exceto SuperAdmin, se existir)
