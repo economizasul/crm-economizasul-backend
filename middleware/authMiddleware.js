@@ -1,3 +1,5 @@
+// middleware/authMiddleware.js
+
 const jwt = require('jsonwebtoken');
 const { pool } = require('../config/db.js');
 
@@ -52,13 +54,21 @@ const adminOnly = (req, res, next) => {
     }
 };
 
-// NOVO: authorize compatível com authorize('Admin')
+// CORREÇÃO CRÍTICA: Normaliza o role para minúsculas antes de checar a permissão.
 const authorize = (...roles) => {
+    // 1. Converte os papéis esperados (passados para authorize) para minúsculas
+    const expectedRoles = roles.map(role => role.toLowerCase());
+
     return (req, res, next) => {
         if (!req.user) {
             return res.status(401).json({ error: "Não autenticado" });
         }
-        if (!roles.includes(req.user.role)) {
+        
+        // 2. Converte o papel do usuário logado para minúsculas
+        const userRole = req.user.role.toLowerCase(); 
+
+        // 3. Verifica se o papel em minúsculas está na lista de papéis esperados
+        if (!expectedRoles.includes(userRole)) {
             return res.status(403).json({ error: `Acesso negado: role ${req.user.role} não autorizado.` });
         }
         next();
