@@ -40,8 +40,8 @@ const formatLeadResponse = (lead) => {
         
         email: lead.email || '',
         uc: lead.uc || '',
-        avgConsumption: lead.avg_consumption || null,      
-        estimatedSavings: lead.estimated_savings || null,  
+        avgConsumption: lead.avg_consumption || null,      
+        estimatedSavings: lead.estimated_savings || null,  
         qsa: lead.qsa || '',
         lat: lead.lat || null,
         lng: lead.lng || null,
@@ -98,7 +98,7 @@ const createLead = async (req, res) => {
 
 
 // ===========================
-// 📝 Atualiza um lead existente (PUT /api/v1/leads/:id)
+// 📝 Atualiza um lead existente (PUT /api/v1/leads/:id) (Mantida)
 // ===========================
 const updateLead = async (req, res) => {
     const { id } = req.params;
@@ -119,7 +119,7 @@ const updateLead = async (req, res) => {
         // 1. Busca o Lead atual para obter o owner_id original e o nome do proprietário
         const currentLead = await Lead.findById(id);
         if (!currentLead) {
-             return res.status(404).json({ error: 'Lead não encontrado.' });
+            return res.status(404).json({ error: 'Lead não encontrado.' });
         }
         
         // 2. Verificação de permissão
@@ -178,17 +178,29 @@ const updateLead = async (req, res) => {
 };
 
 // ===========================
-// 🧩 Lista todos os leads (Admin) ou leads próprios (User) (Mantida, mas depende do Lead.findAll)
+// 🧩 Lista todos os leads (Admin) ou leads próprios (User) (CORRIGIDA)
 // ===========================
 const getAllLeads = async (req, res) => {
     try {
-        const isAdmin = req.user.role === 'Admin';
-        const ownerId = req.user.id; 
+        // CORREÇÃO CRÍTICA:
+        // O Lead.findAll agora espera um OBJETO com userId, role e filtros de query string.
+        const { id: userId, role } = req.user;
+        const { search, status, origin } = req.query;
 
-        // O modelo Lead.findAll é quem filtra por owner_id se não for Admin
-        const leads = await Lead.findAll(ownerId, isAdmin);
+        // Chamada correta: passando um objeto com as propriedades que o modelo espera
+        const leads = await Lead.findAll({
+            userId,
+            role: role.toLowerCase(), // Garante que 'Admin' ou 'admin' funcione com a lógica do modelo
+            search,
+            status,
+            origin
+        });
+
         const formattedLeads = leads.map(formatLeadResponse);
         
+        // DEBBUG: Verifique este log no seu console para confirmar que leads foram encontrados
+        console.log(`Leads encontrados e enviados para o frontend: ${leads.length}`); 
+
         res.status(200).json(formattedLeads);
 
     } catch (error) {
