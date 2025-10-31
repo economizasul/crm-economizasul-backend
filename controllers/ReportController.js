@@ -2,8 +2,8 @@
 
 const Lead = require('../models/Lead');
 const { pool } = require('../config/db'); 
-const { generatePdfReport, generateCsvString } = require('../src/services/PDFGenerator'); // ✅ Caminho corrigido
-const { format } = require('date-fns'); // Instale: npm install date-fns
+const { generatePdfReport, generateCsvString } = require('../src/services/PDFGenerator');
+const { format } = require('date-fns');
 
 // Lógica de Obtenção de Dados (função auxiliar para evitar repetição no controller)
 const getFilteredLeadsWithSeller = async (filters) => {
@@ -19,23 +19,13 @@ const getFilteredLeadsWithSeller = async (filters) => {
     const values = [];
     let valueIndex = 1;
     
-    // Se o usuário NÃO for Admin, ou se o Admin está filtrando por um vendedor específico
-    if (!filters.isAdmin) {
-        // Se NÃO for Admin, force o filtro para o ID do usuário logado
-        query += ` AND l.owner_id = $${valueIndex}`;
-        values.push(filters.ownerId);
-        valueIndex++;
-    }
-    
-    // Se o Admin ESPECIFICOU um ownerId (req.query.ownerId), aplique o filtro.
-    // Isso é redundante com a lógica acima (pois filters.ownerId é finalOwnerId), 
-    // mas pode ser simplificado se a lógica for: se isAdmin e ownerId, filtre.
-    if (filters.ownerId && filters.isAdmin) { 
+    // Se não for Admin, ou se o Admin está filtrando por um vendedor específico
+    if (!filters.isAdmin || filters.ownerId) {
          query += ` AND l.owner_id = $${valueIndex}`;
          values.push(filters.ownerId);
          valueIndex++;
     }
-
+    
     if (filters.startDate) {
         query += ` AND l.created_at >= $${valueIndex}`;
         values.push(filters.startDate);
@@ -62,17 +52,17 @@ const getFilteredLeadsWithSeller = async (filters) => {
 };
 
 // =============================================================
-// NOVO: ENDPOINT PRINCIPAL DO DASHBOARD (MÉTRICAS)
+// ENDPOINT PRINCIPAL DO DASHBOARD (MÉTRICAS)
 // =============================================================
 exports.getDashboardData = async (req, res) => {
     try {
         const { startDate, endDate, ownerId, origin } = req.query;
         
-        // 🚨 CORREÇÃO CRÍTICA: Normaliza o role para garantir a verificação de Admin
+        // Garante que a checagem de Admin funcione (minúsculas)
         const isAdmin = req.user.role.toLowerCase() === 'admin';
         
-        // Se não for Admin, força o filtro para o ID do usuário logado
-        const finalOwnerId = !isAdmin ? req.user.id : ownerId; 
+        // Define o filtro de ownerId. Se Admin, permite ownerId do query, senão força o ID do usuário.
+        const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id; 
         
         const filters = {
             startDate, endDate, 
@@ -81,30 +71,31 @@ exports.getDashboardData = async (req, res) => {
             origin
         };
         
-        // DEBUG: Se a correção funcionou, o ownerId SÓ será aplicado se ownerId estiver em req.query
-        // ou se o usuário não for Admin.
-        console.log('Filtros ReportController:', filters);
-
         const leads = await getFilteredLeadsWithSeller(filters);
-
+        
         const totalLeads = leads.length;
+
+        // --- Métrica Básicas ---
         const wonLeads = leads.filter(l => l.status === 'Ganho');
         const lostLeads = leads.filter(l => l.status === 'Perdido');
         const activeLeads = leads.filter(l => l.status !== 'Ganho' && l.status !== 'Perdido');
+        
         const totalValueInNegotiation = leads
             .filter(l => ['Em Negociação', 'Proposta Enviada'].includes(l.status))
             .reduce((sum, l) => sum + (l.estimated_savings || 0), 0);
             
-        // ⚠️ A média de tempo de resposta está estática em 32. 
-        // Você pode querer calcular isso com base nos dados reais dos leads.
+        // Valor estático
         const avgResponseTime = 32; 
 
-        const funnelData = leads.reduce((acc, l) => {
+        // --- Análise de Funil (Converte para Array) ---
+        const funnelDataObj = leads.reduce((acc, l) => {
             acc[l.status] = (acc[l.status] || 0) + 1;
             return acc;
         }, {});
-        
-        const performanceData = leads.reduce((acc, l) => {
+        const funnelData = Object.keys(funnelDataObj).map(status => ({ status, count: funnelDataObj[status] }));
+
+        // --- Análise de Performance (Converte para Array) ---
+        const performanceDataObj = leads.reduce((acc, l) => {
             if (!acc[l.owner_id]) {
                 acc[l.owner_id] = { name: l.owner_name, totalLeads: 0, wonLeads: 0, activeLeads: 0, totalTimeToClose: 0, wonCount: 0 };
             }
@@ -120,7 +111,7 @@ exports.getDashboardData = async (req, res) => {
             return acc;
         }, {});
 
-        const sellerPerformance = Object.values(performanceData).map(p => ({
+        const sellerPerformance = Object.values(performanceDataObj).map(p => ({
             name: p.name,
             totalLeads: p.totalLeads,
             wonLeads: p.wonLeads,
@@ -129,13 +120,30 @@ exports.getDashboardData = async (req, res) => {
             avgTimeToClose: p.wonCount > 0 ? (p.totalTimeToClose / p.wonCount).toFixed(0) : 0
         }));
 
-        const lossReasons = lostLeads.reduce((acc, l) => {
+        // --- Análise de Origem (Converte para Array) ---
+        const originAnalysisObj = leads.reduce((acc, l) => {
+            const originKey = l.origin || 'Desconhecida';
+            if (!acc[originKey]) {
+                acc[originKey] = { origin: originKey, totalLeads: 0, wonLeads: 0 };
+            }
+            acc[originKey].totalLeads++;
+            if (l.status === 'Ganho') {
+                acc[originKey].wonLeads++;
+            }
+            return acc;
+        }, {});
+        const originAnalysis = Object.values(originAnalysisObj);
+
+        // --- Razões de Perda (Converte para Array) ---
+        const lossReasonsObj = lostLeads.reduce((acc, l) => {
             if (l.reason_for_loss) {
                 acc[l.reason_for_loss] = (acc[l.reason_for_loss] || 0) + 1;
             }
             return acc;
         }, {});
+        const lossReasons = Object.keys(lossReasonsObj).map(reason => ({ reason, count: lossReasonsObj[reason] }));
         
+        // --- Objeto Final do Dashboard (TODAS AS CHAVES GARANTIDAS) ---
         const dashboard = {
             newLeads: totalLeads,
             activeLeads: activeLeads.length,
@@ -143,43 +151,33 @@ exports.getDashboardData = async (req, res) => {
             avgResponseTime: avgResponseTime,
             totalValueInNegotiation: totalValueInNegotiation,
             
-            funnelData: Object.keys(funnelData).map(status => ({ status, count: funnelData[status] })),
+            // Todas essas chaves agora garantem um Array [] mesmo se leads estiver vazio.
+            funnelData: funnelData,
             sellerPerformance: sellerPerformance,
-            
-            originAnalysis: leads.reduce((acc, l) => {
-                const originKey = l.origin || 'Desconhecida';
-                if (!acc[originKey]) {
-                    acc[originKey] = { origin: originKey, totalLeads: 0, wonLeads: 0 };
-                }
-                acc[originKey].totalLeads++;
-                if (l.status === 'Ganho') {
-                    acc[originKey].wonLeads++;
-                }
-                return acc;
-            }, {}),
-            
-            lossReasons: Object.keys(lossReasons).map(reason => ({ reason, count: lossReasons[reason] }))
+            originAnalysis: originAnalysis,
+            lossReasons: lossReasons
         };
         
         res.json(dashboard);
         
     } catch (error) {
         console.error('Erro ao buscar dados do dashboard:', error);
+        // Garante que o frontend receba 500 em caso de erro, evitando tela branca
         res.status(500).json({ error: 'Erro interno ao processar relatórios.' });
     }
 };
 
 // =============================================================
-// NOVO: ENDPOINT DE EXPORTAÇÃO (CSV e PDF)
+// ENDPOINT DE EXPORTAÇÃO (CSV e PDF)
 // =============================================================
 exports.exportReports = async (req, res) => {
     try {
-        const { format, startDate, endDate, ownerId, origin } = req.query; 
+        const { format: exportFormat, startDate, endDate, ownerId, origin } = req.query; 
         
-        // 🚨 CORREÇÃO CRÍTICA: Normaliza o role para garantir a verificação de Admin
+        // Garante que a checagem de Admin funcione (minúsculas)
         const isAdmin = req.user.role.toLowerCase() === 'admin';
         
-        const finalOwnerId = !isAdmin ? req.user.id : ownerId;
+        const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id;
         
         const filters = {
             startDate, endDate, 
@@ -191,17 +189,19 @@ exports.exportReports = async (req, res) => {
         const leads = await getFilteredLeadsWithSeller(filters); 
 
         if (!leads || leads.length === 0) {
+            // Se não houver dados para exportar, retorna 404/mensagem
             return res.status(404).json({ message: 'Nenhum dado encontrado para exportação.' });
         }
 
-        if (format === 'csv') {
+        if (exportFormat === 'csv') {
             const csvString = await generateCsvString(leads);
             
             res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
-            res.send('\ufeff' + csvString);
+            // Adiciona o BOM (Byte Order Mark) para garantir caracteres UTF-8 corretos no Excel
+            res.send('\ufeff' + csvString); 
             
-        } else if (format === 'pdf') {
+        } else if (exportFormat === 'pdf') {
             const pdfBuffer = await generatePdfReport(leads, filters); 
             
             res.setHeader('Content-Type', 'application/pdf');
