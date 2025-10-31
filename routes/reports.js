@@ -2,7 +2,6 @@
 const express = require('express');
 const router = express.Router();
 const { pool } = require('../config/db');
-const db = require('../src/db');
 const ReportController = require('../controllers/ReportController');
 const { protect, admin } = require('../middleware/authMiddleware'); // Importar middlewares
 
