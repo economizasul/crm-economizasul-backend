@@ -19,13 +19,18 @@ const getFilteredLeadsWithSeller = async (filters) => {
     const values = [];
     let valueIndex = 1;
     
+    // Se o usuário NÃO for Admin, ou se o Admin está filtrando por um vendedor específico
     if (!filters.isAdmin) {
+        // Se NÃO for Admin, force o filtro para o ID do usuário logado
         query += ` AND l.owner_id = $${valueIndex}`;
         values.push(filters.ownerId);
         valueIndex++;
     }
     
-    if (filters.ownerId && filters.isAdmin) {
+    // Se o Admin ESPECIFICOU um ownerId (req.query.ownerId), aplique o filtro.
+    // Isso é redundante com a lógica acima (pois filters.ownerId é finalOwnerId), 
+    // mas pode ser simplificado se a lógica for: se isAdmin e ownerId, filtre.
+    if (filters.ownerId && filters.isAdmin) { 
          query += ` AND l.owner_id = $${valueIndex}`;
          values.push(filters.ownerId);
          valueIndex++;
@@ -62,9 +67,12 @@ const getFilteredLeadsWithSeller = async (filters) => {
 exports.getDashboardData = async (req, res) => {
     try {
         const { startDate, endDate, ownerId, origin } = req.query;
-        const isAdmin = req.user.role === 'admin';
         
-        const finalOwnerId = !isAdmin ? req.user.id : ownerId;
+        // 🚨 CORREÇÃO CRÍTICA: Normaliza o role para garantir a verificação de Admin
+        const isAdmin = req.user.role.toLowerCase() === 'admin';
+        
+        // Se não for Admin, força o filtro para o ID do usuário logado
+        const finalOwnerId = !isAdmin ? req.user.id : ownerId; 
         
         const filters = {
             startDate, endDate, 
@@ -73,6 +81,10 @@ exports.getDashboardData = async (req, res) => {
             origin
         };
         
+        // DEBUG: Se a correção funcionou, o ownerId SÓ será aplicado se ownerId estiver em req.query
+        // ou se o usuário não for Admin.
+        console.log('Filtros ReportController:', filters);
+
         const leads = await getFilteredLeadsWithSeller(filters);
 
         const totalLeads = leads.length;
@@ -83,6 +95,8 @@ exports.getDashboardData = async (req, res) => {
             .filter(l => ['Em Negociação', 'Proposta Enviada'].includes(l.status))
             .reduce((sum, l) => sum + (l.estimated_savings || 0), 0);
             
+        // ⚠️ A média de tempo de resposta está estática em 32. 
+        // Você pode querer calcular isso com base nos dados reais dos leads.
         const avgResponseTime = 32; 
 
         const funnelData = leads.reduce((acc, l) => {
@@ -161,7 +175,10 @@ exports.getDashboardData = async (req, res) => {
 exports.exportReports = async (req, res) => {
     try {
         const { format, startDate, endDate, ownerId, origin } = req.query; 
-        const isAdmin = req.user.role === 'admin';
+        
+        // 🚨 CORREÇÃO CRÍTICA: Normaliza o role para garantir a verificação de Admin
+        const isAdmin = req.user.role.toLowerCase() === 'admin';
+        
         const finalOwnerId = !isAdmin ? req.user.id : ownerId;
         
         const filters = {
