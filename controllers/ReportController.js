@@ -13,7 +13,7 @@ const getFilteredLeadsWithSeller = async (filters) => {
             u.name as owner_name,
             EXTRACT(EPOCH FROM (l.date_won - l.created_at)) / 86400 AS time_to_close_days 
         FROM leads l
-        JOIN users u ON l.owner_id = u.id
+        LEFT JOIN users u ON l.owner_id = u.id 
         WHERE 1=1
     `;
     const values = [];

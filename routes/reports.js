@@ -1,6 +1,7 @@
 // src/routes/reports.js
 const express = require('express');
 const router = express.Router();
+const { pool } = require('../config/db');
 const db = require('../src/db');
 const ReportController = require('../controllers/ReportController');
 const { protect, admin } = require('../middleware/authMiddleware'); // Importar middlewares
@@ -8,8 +9,8 @@ const { protect, admin } = require('../middleware/authMiddleware'); // Importar 
 // Rota para buscar vendedores (Mantida)
 router.get('/sellers', async (req, res) => {
   try {
-    // Melhor usar a função auxiliar se a lista de vendedores for necessária
-    const result = await db.query('SELECT id, name FROM users WHERE role != $1 ORDER BY name', ['client']); // Assumindo que users armazena vendedores
+    // MUDANÇA CRÍTICA: De 'sellers' para 'users'
+    const result = await pool.query('SELECT id, name FROM users ORDER BY name');
     res.json(result.rows);
   } catch (err) {
     console.error('Erro ao buscar vendedores:', err);
