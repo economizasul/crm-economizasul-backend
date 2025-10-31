@@ -90,7 +90,7 @@ class Lead {
         const values = [];
         let valueIndex = 1;
 
-        // Regra de segurança/visualização
+        // Regra de segurança/visualização: Se NÃO for Admin, filtre por owner_id
         if (!isAdmin) {
             query += ` AND l.owner_id = $${valueIndex}`;
             values.push(userId);
@@ -117,6 +117,8 @@ class Lead {
         query += ` ORDER BY l.updated_at DESC`; // Ordem de visualização do Kanban
 
         try {
+            // AJUDA DE DEBUG: Mostra a query executada no console do servidor
+            console.log('SQL Executado (Lead.findAll):', query, values); 
             const result = await pool.query(query, values);
             return result.rows;
         } catch (error) {
@@ -125,7 +127,7 @@ class Lead {
         }
     }
     
-    // 4. Busca Lead por ID (Assumindo que estava correta)
+    // 4. Busca Lead por ID (Mantida)
     static async findById(id) {
         // Incluir o owner_name também aqui é uma boa prática
         const query = `
