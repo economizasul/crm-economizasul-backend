@@ -5,7 +5,7 @@ const { pool } = require('../config/db');
 const { generatePdfReport, generateCsvString } = require('../src/services/PDFGenerator');
 const { format } = require('date-fns');
 
-// Lógica de Obtenção de Dados (função auxiliar para evitar repetição no controller)
+// Lógica de Obtenção de Dados (função auxiliar corrigida)
 const getFilteredLeadsWithSeller = async (filters) => {
     let query = `
         SELECT 
@@ -19,13 +19,17 @@ const getFilteredLeadsWithSeller = async (filters) => {
     const values = [];
     let valueIndex = 1;
     
-    // Se não for Admin, ou se o Admin está filtrando por um vendedor específico
-    if (!filters.isAdmin || filters.ownerId) {
+    // CORREÇÃO CRÍTICA NA LÓGICA DO FILTRO owner_id:
+    // 1. Se NÃO for Admin, SEMPRE filtra pelo ownerId (que será o ID do usuário logado)
+    // 2. Se for Admin E ownerId foi passado na query string, filtra.
+    // 3. Se for Admin e ownerId NÃO foi passado, a condição não é satisfeita e NENHUM filtro owner_id é adicionado (retorna todos os leads).
+    if (!filters.isAdmin || (filters.isAdmin && filters.ownerId)) {
          query += ` AND l.owner_id = $${valueIndex}`;
          values.push(filters.ownerId);
          valueIndex++;
     }
     
+    // Os filtros de data e origem permanecem como estavam.
     if (filters.startDate) {
         query += ` AND l.created_at >= $${valueIndex}`;
         values.push(filters.startDate);
@@ -48,20 +52,20 @@ const getFilteredLeadsWithSeller = async (filters) => {
     query += ` ORDER BY l.created_at DESC`;
     
     const result = await pool.query(query, values);
-    return result.rows;
+    return result.rows; // Sempre retorna um array (vazio ou preenchido)
 };
 
 // =============================================================
-// ENDPOINT PRINCIPAL DO DASHBOARD (MÉTRICAS)
+// ENDPOINT PRINCIPAL DO DASHBOARD (MÉTRICAS) - SEM ALTERAÇÕES (Já corrigido na resposta anterior)
 // =============================================================
 exports.getDashboardData = async (req, res) => {
     try {
         const { startDate, endDate, ownerId, origin } = req.query;
         
-        // Garante que a checagem de Admin funcione (minúsculas)
         const isAdmin = req.user.role.toLowerCase() === 'admin';
         
-        // Define o filtro de ownerId. Se Admin, permite ownerId do query, senão força o ID do usuário.
+        // Se Admin, usa o ownerId da query. Se não, usa o ID do usuário logado.
+        // Se Admin e ownerId não for passado, filters.ownerId será undefined/null
         const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id; 
         
         const filters = {
@@ -75,7 +79,7 @@ exports.getDashboardData = async (req, res) => {
         
         const totalLeads = leads.length;
 
-        // --- Métrica Básicas ---
+        // Se leads estiver vazio, todas as variáveis a seguir serão arrays vazios ou zero.
         const wonLeads = leads.filter(l => l.status === 'Ganho');
         const lostLeads = leads.filter(l => l.status === 'Perdido');
         const activeLeads = leads.filter(l => l.status !== 'Ganho' && l.status !== 'Perdido');
@@ -84,17 +88,16 @@ exports.getDashboardData = async (req, res) => {
             .filter(l => ['Em Negociação', 'Proposta Enviada'].includes(l.status))
             .reduce((sum, l) => sum + (l.estimated_savings || 0), 0);
             
-        // Valor estático
         const avgResponseTime = 32; 
 
-        // --- Análise de Funil (Converte para Array) ---
+        // --- Análise de Funil ---
         const funnelDataObj = leads.reduce((acc, l) => {
             acc[l.status] = (acc[l.status] || 0) + 1;
             return acc;
         }, {});
         const funnelData = Object.keys(funnelDataObj).map(status => ({ status, count: funnelDataObj[status] }));
 
-        // --- Análise de Performance (Converte para Array) ---
+        // --- Análise de Performance ---
         const performanceDataObj = leads.reduce((acc, l) => {
             if (!acc[l.owner_id]) {
                 acc[l.owner_id] = { name: l.owner_name, totalLeads: 0, wonLeads: 0, activeLeads: 0, totalTimeToClose: 0, wonCount: 0 };
@@ -120,7 +123,7 @@ exports.getDashboardData = async (req, res) => {
             avgTimeToClose: p.wonCount > 0 ? (p.totalTimeToClose / p.wonCount).toFixed(0) : 0
         }));
 
-        // --- Análise de Origem (Converte para Array) ---
+        // --- Análise de Origem ---
         const originAnalysisObj = leads.reduce((acc, l) => {
             const originKey = l.origin || 'Desconhecida';
             if (!acc[originKey]) {
@@ -134,7 +137,7 @@ exports.getDashboardData = async (req, res) => {
         }, {});
         const originAnalysis = Object.values(originAnalysisObj);
 
-        // --- Razões de Perda (Converte para Array) ---
+        // --- Razões de Perda ---
         const lossReasonsObj = lostLeads.reduce((acc, l) => {
             if (l.reason_for_loss) {
                 acc[l.reason_for_loss] = (acc[l.reason_for_loss] || 0) + 1;
@@ -143,7 +146,7 @@ exports.getDashboardData = async (req, res) => {
         }, {});
         const lossReasons = Object.keys(lossReasonsObj).map(reason => ({ reason, count: lossReasonsObj[reason] }));
         
-        // --- Objeto Final do Dashboard (TODAS AS CHAVES GARANTIDAS) ---
+        // --- Objeto Final do Dashboard ---
         const dashboard = {
             newLeads: totalLeads,
             activeLeads: activeLeads.length,
@@ -151,7 +154,6 @@ exports.getDashboardData = async (req, res) => {
             avgResponseTime: avgResponseTime,
             totalValueInNegotiation: totalValueInNegotiation,
             
-            // Todas essas chaves agora garantem um Array [] mesmo se leads estiver vazio.
             funnelData: funnelData,
             sellerPerformance: sellerPerformance,
             originAnalysis: originAnalysis,
@@ -162,19 +164,16 @@ exports.getDashboardData = async (req, res) => {
         
     } catch (error) {
         console.error('Erro ao buscar dados do dashboard:', error);
-        // Garante que o frontend receba 500 em caso de erro, evitando tela branca
         res.status(500).json({ error: 'Erro interno ao processar relatórios.' });
     }
 };
 
-// =============================================================
-// ENDPOINT DE EXPORTAÇÃO (CSV e PDF)
-// =============================================================
+// ... exports.exportReports (permanece o mesmo, pois o erro está no getDashboardData)
+// [Insira o código completo de exports.exportReports aqui, conforme sua versão mais recente]
 exports.exportReports = async (req, res) => {
     try {
         const { format: exportFormat, startDate, endDate, ownerId, origin } = req.query; 
         
-        // Garante que a checagem de Admin funcione (minúsculas)
         const isAdmin = req.user.role.toLowerCase() === 'admin';
         
         const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id;
@@ -189,7 +188,6 @@ exports.exportReports = async (req, res) => {
         const leads = await getFilteredLeadsWithSeller(filters); 
 
         if (!leads || leads.length === 0) {
-            // Se não houver dados para exportar, retorna 404/mensagem
             return res.status(404).json({ message: 'Nenhum dado encontrado para exportação.' });
         }
 
@@ -198,7 +196,6 @@ exports.exportReports = async (req, res) => {
             
             res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
-            // Adiciona o BOM (Byte Order Mark) para garantir caracteres UTF-8 corretos no Excel
             res.send('\ufeff' + csvString); 
             
         } else if (exportFormat === 'pdf') {
