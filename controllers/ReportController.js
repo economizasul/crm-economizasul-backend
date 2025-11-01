@@ -21,8 +21,8 @@ const getFilteredLeadsWithSeller = async (filters) => {
     const values = [];
     let valueIndex = 1;
 
-    // CORREÇÃO CRÍTICA: Aplica o filtro de owner_id APENAS se o valor existir.
-    // Isso garante que Admin vendo "Todos" (com ownerId undefined/null) não filtre.
+    // CORREÇÃO CRÍTICA: Aplica o filtro de owner_id APENAS se o valor de filters.ownerId existir.
+    // Se Admin acessa sem filtro, filters.ownerId será undefined e este bloco será ignorado.
     if (filters.ownerId) {
         query += ` AND l.owner_id = $${valueIndex}`;
         values.push(filters.ownerId);
@@ -50,8 +50,13 @@ const getFilteredLeadsWithSeller = async (filters) => {
 
     query += ` ORDER BY l.created_at DESC`;
 
-    const result = await pool.query(query, values);
-    return result.rows;
+    try {
+        const result = await pool.query(query, values);
+        return result.rows;
+    } catch (error) {
+        console.error("Erro na consulta SQL (getFilteredLeadsWithSeller):", error.message);
+        throw error;
+    }
 };
 
 // =============================================================
@@ -63,26 +68,28 @@ exports.getDashboardData = async (req, res) => {
 
         const isAdmin = req.user.role.toLowerCase() === 'admin';
 
-        // CORREÇÃO CRÍTICA NA LÓGICA: Determina o finalOwnerId
+        // LÓGICA DE FILTRO CORRIGIDA:
         let finalOwnerId;
         if (isAdmin) {
-            // Se for Admin, usa o ownerId passado na query string (se houver), 
-            // caso contrário, deixa finalOwnerId como undefined (para ver todos os leads).
+            // Admin: Usa o ownerId da query string (se houver), caso contrário, undefined (verá todos).
             finalOwnerId = ownerId || undefined; 
         } else {
-            // Se não for Admin, deve sempre filtrar pelo seu próprio ID.
+            // Usuário Comum: Sempre vê seus próprios leads.
             finalOwnerId = req.user.id;
         }
 
         const filters = {
             startDate, endDate, 
-            ownerId: finalOwnerId, // Pode ser undefined se Admin quiser ver tudo
+            ownerId: finalOwnerId, 
             isAdmin, 
             origin
         };
 
         const leads = await getFilteredLeadsWithSeller(filters);
-
+        
+        // ... (Resto da lógica de processamento de leads, Funil, Performance, Origem, etc. - Mantida)
+        // ...
+        
         const totalLeads = leads.length;
 
         const wonLeads = leads.filter(l => l.status === 'Ganho');
@@ -92,7 +99,7 @@ exports.getDashboardData = async (req, res) => {
         const totalValueInNegotiation = leads
             .filter(l => ['Em Negociação', 'Proposta Enviada'].includes(l.status))
             .reduce((sum, l) => sum + (l.estimated_savings || 0), 0);
- 
+            
         const avgResponseTime = 32; 
 
         // --- Análise de Funil ---
@@ -150,7 +157,7 @@ exports.getDashboardData = async (req, res) => {
             return acc;
         }, {});
         const lossReasons = Object.keys(lossReasonsObj).map(reason => ({ reason, count: lossReasonsObj[reason] }));
-
+        
         // --- Objeto Final do Dashboard ---
         const dashboard = {
             newLeads: totalLeads,
@@ -158,23 +165,25 @@ exports.getDashboardData = async (req, res) => {
             conversionRate: (totalLeads > 0 ? (wonLeads.length / totalLeads * 100).toFixed(1) : 0) + '%',
             avgResponseTime: avgResponseTime,
             totalValueInNegotiation: totalValueInNegotiation,
-
+            
             funnelData: funnelData,
             sellerPerformance: sellerPerformance,
             originAnalysis: originAnalysis,
             lossReasons: lossReasons
         };
-
+        
         res.json(dashboard);
- 
+        
     } catch (error) {
-        console.error('Erro ao buscar dados do dashboard:', error);
-        res.status(500).json({ error: 'Erro interno ao processar relatórios.' });
+        console.error('Erro CRÍTICO ao buscar dados do dashboard (getDashboardData):', error);
+        res.status(500).json({ error: 'Erro interno do servidor ao processar o dashboard.' });
     }
 };
 
+// ... (Resto do ReportController.js - exportReports - Mantido e corrigido com a mesma lógica de filtro)
+
 // =============================================================
-// ENDPOINT DE EXPORTAÇÃO (CORRIGIDO)
+// ENDPOINT DE EXPORTAÇÃO (CORRIGIDO com a mesma lógica)
 // =============================================================
 exports.exportReports = async (req, res) => {
     try {
@@ -182,7 +191,7 @@ exports.exportReports = async (req, res) => {
 
         const isAdmin = req.user.role.toLowerCase() === 'admin';
 
-        // CORREÇÃO CRÍTICA NA LÓGICA: Determina o finalOwnerId
+        // LÓGICA DE FILTRO CORRIGIDA:
         let finalOwnerId;
         if (isAdmin) {
             finalOwnerId = ownerId || undefined; 
@@ -196,8 +205,8 @@ exports.exportReports = async (req, res) => {
             isAdmin, 
             origin
         };
-
-        // Lógica de filtro duplicada aqui para a exportação (reconstruída com base na getFilteredLeadsWithSeller CORRIGIDA).
+        
+        // REPETE A LÓGICA DE FILTRO AQUI
         let query = `
             SELECT 
                 l.*, 
@@ -210,7 +219,6 @@ exports.exportReports = async (req, res) => {
         const values = [];
         let valueIndex = 1;
 
-        // USA A NOVA LÓGICA DE FILTRO: Só filtra se finalOwnerId existe
         if (filters.ownerId) {
             query += ` AND l.owner_id = $${valueIndex}`;
             values.push(filters.ownerId);
@@ -243,7 +251,7 @@ exports.exportReports = async (req, res) => {
 
 
         if (!leads || leads.length === 0) {
-            // Retorna status 204 (No Content) ou 404 (Not Found)
+            // Retorna status 204 (No Content) para indicar que não há conteúdo
             return res.status(204).send(); 
         }
 
