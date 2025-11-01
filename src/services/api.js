@@ -1,39 +1,31 @@
 // src/services/api.js
-
 import axios from 'axios';
 
-// 1. Cria uma instância base do axios
+// ==============================================
+// 🔧 Define a URL base dinamicamente
+// ==============================================
+// 1. Em produção (Render Frontend): usa a variável de ambiente VITE_API_URL
+// 2. Em ambiente local: fallback para http://localhost:10000
+// ==============================================
+
+const API_BASE_URL =
+  import.meta.env.VITE_API_URL?.replace(/\/$/, '') || 'http://localhost:10000';
+
+// ✅ Cria instância do Axios com headers padrão
 const api = axios.create({
-    // A URL base é crucial. Se o backend estiver em outra porta/domínio, ajuste aqui.
-    baseURL: '/api', 
-    headers: {
-        'Content-Type': 'application/json',
-    },
+  baseURL: `${API_BASE_URL}/api/v1`, // garante prefixo da API
+  headers: {
+    'Content-Type': 'application/json',
+  },
 });
 
-// 2. Interceptor de Requisição: Adiciona o token JWT
+// ✅ Intercepta requisições e adiciona o token de autenticação
 api.interceptors.request.use((config) => {
-    const userInfo = localStorage.getItem('userInfo');
-    let token = null;
-    
-    try {
-        if (userInfo) {
-            token = JSON.parse(userInfo).token;
-        }
-    } catch (e) {
-        console.error("Erro ao parsear userInfo do localStorage:", e);
-    }
-
-    if (token) {
-        // ESSENCIAL: Adiciona o token ao cabeçalho de Autorização
-        config.headers.Authorization = `Bearer ${token}`;
-    }
-    
-    return config;
-}, (error) => {
-    return Promise.reject(error);
+  const token = localStorage.getItem('token');
+  if (token) {
+    config.headers.Authorization = `Bearer ${token}`;
+  }
+  return config;
 });
-
-// Interceptor de Resposta (Mantido)
 
 export default api;
