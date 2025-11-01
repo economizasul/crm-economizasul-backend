@@ -1,26 +1,28 @@
 // routes/reports.js
 const express = require('express');
 const router = express.Router();
-const { pool } = require('../config/db');
+
 const ReportController = require('../controllers/ReportController');
-const { protect, admin } = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 
-// Rota para buscar vendedores (Lista todos os usuários para o filtro de relatórios)
-router.get('/sellers', async (req, res) => {
-    try {
-        // CORRETO: Busca da tabela 'users'
-        const result = await pool.query('SELECT id, name FROM users ORDER BY name');
-        res.json(result.rows);
-    } catch (err) {
-        console.error('Erro ao buscar vendedores:', err);
-        res.status(500).json({ error: err.message });
-    }
-});
-
-// Rota para buscar todos os dados do Dashboard (apenas para usuários autenticados)
+// Rota para dashboard principal (metrics)
 router.get('/dashboard-data', protect, ReportController.getDashboardData);
 
-// Rota para exportação (apenas para usuários autenticados)
+// Rota para export (csv / pdf)
 router.get('/export', protect, ReportController.exportReports);
+
+// Rota para obter lista de vendedores (usuários ativos)
+// Esta rota é usada pelo frontend em ReportsPage.jsx -> api.get('/reports/sellers')
+router.get('/sellers', protect, async (req, res) => {
+  try {
+    // Query simples para retornar id e name dos usuários ativos
+    const { pool } = require('../config/db');
+    const result = await pool.query(`SELECT id, name FROM users WHERE is_active = true ORDER BY name`);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar vendedores (sellers):', error);
+    res.status(500).json({ error: 'Erro interno ao buscar vendedores.' });
+  }
+});
 
 module.exports = router;
