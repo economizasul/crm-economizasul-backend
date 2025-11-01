@@ -1,216 +1,246 @@
-// controllers/ReportController.js
+import React from 'react';
+import { 
+    PieChart, Pie, BarChart, Bar, 
+    XAxis, YAxis, Tooltip, ResponsiveContainer, Cell 
+} from 'recharts'; 
 
-const Lead = require('../models/Lead');
-const { pool } = require('../config/db'); 
-const { generatePdfReport, generateCsvString } = require('../src/services/PDFGenerator');
-const { format } = require('date-fns');
+const STATUS_ORDER = ['Novo', 'Primeiro Contato', 'Retorno Agendado', 'Em Negociação', 'Proposta Enviada', 'Ganho', 'Perdido'];
+const FUNNEL_COLORS = ['#A3D4FF', '#74BDE9', '#4CA3D5', '#3A8FB9', '#2C6E91', '#1A4D67', '#FF6B6B'];
 
-// Lógica de Obtenção de Dados (função auxiliar corrigida)
-const getFilteredLeadsWithSeller = async (filters) => {
-    let query = `
-        SELECT 
-            l.*, 
-            u.name as owner_name,
-            EXTRACT(EPOCH FROM (l.date_won - l.created_at)) / 86400 AS time_to_close_days 
-        FROM leads l
-        LEFT JOIN users u ON l.owner_id = u.id 
-        WHERE 1=1
-    `;
-    const values = [];
-    let valueIndex = 1;
+const ReportsDashboard = ({ data }) => {
     
-    // CORREÇÃO CRÍTICA NA LÓGICA DO FILTRO owner_id:
-    // 1. Se NÃO for Admin, SEMPRE filtra pelo ownerId (que será o ID do usuário logado)
-    // 2. Se for Admin E ownerId foi passado na query string, filtra.
-    // 3. Se for Admin e ownerId NÃO foi passado, a condição não é satisfeita e NENHUM filtro owner_id é adicionado (retorna todos os leads).
-    if (!filters.isAdmin || (filters.isAdmin && filters.ownerId)) {
-         query += ` AND l.owner_id = $${valueIndex}`;
-         values.push(filters.ownerId);
-         valueIndex++;
-    }
-    
-    // Os filtros de data e origem permanecem como estavam.
-    if (filters.startDate) {
-        query += ` AND l.created_at >= $${valueIndex}`;
-        values.push(filters.startDate);
-        valueIndex++;
-    }
-    if (filters.endDate) {
-        const endDay = new Date(filters.endDate);
-        endDay.setHours(23, 59, 59, 999);
-        query += ` AND l.created_at <= $${valueIndex}`;
-        values.push(endDay);
-        valueIndex++;
-    }
-    
-    if (filters.origin) {
-        query += ` AND l.origin = $${valueIndex}`;
-        values.push(filters.origin);
-        valueIndex++;
+    // =============================================================
+    // CORREÇÃO CRÍTICA: Cláusula de Guarda para evitar 'undefined'
+    // Se 'data' for null/undefined (antes do fetch), sai do componente.
+    // =============================================================
+    if (!data) {
+        return <div className="text-center p-10 font-medium text-gray-500">Carregando dados do dashboard...</div>;
     }
 
-    query += ` ORDER BY l.created_at DESC`;
-    
-    const result = await pool.query(query, values);
-    return result.rows; // Sempre retorna um array (vazio ou preenchido)
-};
 
-// =============================================================
-// ENDPOINT PRINCIPAL DO DASHBOARD (MÉTRICAS) - SEM ALTERAÇÕES (Já corrigido na resposta anterior)
-// =============================================================
-exports.getDashboardData = async (req, res) => {
-    try {
-        const { startDate, endDate, ownerId, origin } = req.query;
-        
-        const isAdmin = req.user.role.toLowerCase() === 'admin';
-        
-        // Se Admin, usa o ownerId da query. Se não, usa o ID do usuário logado.
-        // Se Admin e ownerId não for passado, filters.ownerId será undefined/null
-        const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id; 
-        
-        const filters = {
-            startDate, endDate, 
-            ownerId: finalOwnerId, 
-            isAdmin, 
-            origin
-        };
-        
-        const leads = await getFilteredLeadsWithSeller(filters);
-        
-        const totalLeads = leads.length;
+    // =============================================================
+    // 1. Processamento de Dados (Arrays defensivos mantidos)
+    // =============================================================
 
-        // Se leads estiver vazio, todas as variáveis a seguir serão arrays vazios ou zero.
-        const wonLeads = leads.filter(l => l.status === 'Ganho');
-        const lostLeads = leads.filter(l => l.status === 'Perdido');
-        const activeLeads = leads.filter(l => l.status !== 'Ganho' && l.status !== 'Perdido');
-        
-        const totalValueInNegotiation = leads
-            .filter(l => ['Em Negociação', 'Proposta Enviada'].includes(l.status))
-            .reduce((sum, l) => sum + (l.estimated_savings || 0), 0);
-            
-        const avgResponseTime = 32; 
+    // 1.1. Processa Dados do Funil (Garante que data.funnelData é um array)
+    const rawFunnelData = data.funnelData || []; 
+    const processedFunnel = [];
+    let totalLeads = 0;
+    let previousCount = 0;
 
-        // --- Análise de Funil ---
-        const funnelDataObj = leads.reduce((acc, l) => {
-            acc[l.status] = (acc[l.status] || 0) + 1;
-            return acc;
-        }, {});
-        const funnelData = Object.keys(funnelDataObj).map(status => ({ status, count: funnelDataObj[status] }));
-
-        // --- Análise de Performance ---
-        const performanceDataObj = leads.reduce((acc, l) => {
-            if (!acc[l.owner_id]) {
-                acc[l.owner_id] = { name: l.owner_name, totalLeads: 0, wonLeads: 0, activeLeads: 0, totalTimeToClose: 0, wonCount: 0 };
-            }
-            acc[l.owner_id].totalLeads++;
-            if (l.status === 'Ganho') {
-                acc[l.owner_id].wonLeads++;
-                acc[l.owner_id].wonCount++;
-                acc[l.owner_id].totalTimeToClose += l.time_to_close_days || 0;
-            }
-            if (l.status !== 'Ganho' && l.status !== 'Perdido') {
-                acc[l.owner_id].activeLeads++;
-            }
-            return acc;
-        }, {});
-
-        const sellerPerformance = Object.values(performanceDataObj).map(p => ({
-            name: p.name,
-            totalLeads: p.totalLeads,
-            wonLeads: p.wonLeads,
-            activeLeads: p.activeLeads,
-            conversionRate: (p.totalLeads > 0 ? (p.wonLeads / p.totalLeads * 100).toFixed(1) : 0) + '%',
-            avgTimeToClose: p.wonCount > 0 ? (p.totalTimeToClose / p.wonCount).toFixed(0) : 0
-        }));
-
-        // --- Análise de Origem ---
-        const originAnalysisObj = leads.reduce((acc, l) => {
-            const originKey = l.origin || 'Desconhecida';
-            if (!acc[originKey]) {
-                acc[originKey] = { origin: originKey, totalLeads: 0, wonLeads: 0 };
-            }
-            acc[originKey].totalLeads++;
-            if (l.status === 'Ganho') {
-                acc[originKey].wonLeads++;
-            }
-            return acc;
-        }, {});
-        const originAnalysis = Object.values(originAnalysisObj);
-
-        // --- Razões de Perda ---
-        const lossReasonsObj = lostLeads.reduce((acc, l) => {
-            if (l.reason_for_loss) {
-                acc[l.reason_for_loss] = (acc[l.reason_for_loss] || 0) + 1;
-            }
-            return acc;
-        }, {});
-        const lossReasons = Object.keys(lossReasonsObj).map(reason => ({ reason, count: lossReasonsObj[reason] }));
+    for (const status of STATUS_ORDER) {
+        const item = rawFunnelData.find(d => d.status === status);
+        const count = item ? item.count : 0;
         
-        // --- Objeto Final do Dashboard ---
-        const dashboard = {
-            newLeads: totalLeads,
-            activeLeads: activeLeads.length,
-            conversionRate: (totalLeads > 0 ? (wonLeads.length / totalLeads * 100).toFixed(1) : 0) + '%',
-            avgResponseTime: avgResponseTime,
-            totalValueInNegotiation: totalValueInNegotiation,
-            
-            funnelData: funnelData,
-            sellerPerformance: sellerPerformance,
-            originAnalysis: originAnalysis,
-            lossReasons: lossReasons
-        };
-        
-        res.json(dashboard);
-        
-    } catch (error) {
-        console.error('Erro ao buscar dados do dashboard:', error);
-        res.status(500).json({ error: 'Erro interno ao processar relatórios.' });
-    }
-};
-
-// ... exports.exportReports (permanece o mesmo, pois o erro está no getDashboardData)
-// [Insira o código completo de exports.exportReports aqui, conforme sua versão mais recente]
-exports.exportReports = async (req, res) => {
-    try {
-        const { format: exportFormat, startDate, endDate, ownerId, origin } = req.query; 
-        
-        const isAdmin = req.user.role.toLowerCase() === 'admin';
-        
-        const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id;
-        
-        const filters = {
-            startDate, endDate, 
-            ownerId: finalOwnerId, 
-            isAdmin, 
-            origin
-        };
-        
-        const leads = await getFilteredLeadsWithSeller(filters); 
-
-        if (!leads || leads.length === 0) {
-            return res.status(404).json({ message: 'Nenhum dado encontrado para exportação.' });
+        if (status === 'Novo') {
+            totalLeads = count;
         }
 
-        if (exportFormat === 'csv') {
-            const csvString = await generateCsvString(leads);
-            
-            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
-            res.send('\ufeff' + csvString); 
-            
-        } else if (exportFormat === 'pdf') {
-            const pdfBuffer = await generatePdfReport(leads, filters); 
-            
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf"`);
-            return res.send(pdfBuffer);
-            
-        } else {
-            return res.status(400).json({ message: 'Formato de exportação inválido.' });
+        let conversionRate = 0;
+        if (previousCount > 0) {
+            conversionRate = (count / previousCount) * 100;
         }
         
-    } catch (error) {
-        console.error('Erro na exportação de relatórios:', error);
-        res.status(500).json({ error: 'Erro interno ao exportar relatórios.' });
+        processedFunnel.push({
+            status,
+            count,
+            conversionRate: conversionRate.toFixed(1)
+        });
+
+        if (status !== 'Perdido') {
+            previousCount = count;
+        }
     }
+    
+    const reversedFunnel = processedFunnel.filter(d => d.count > 0).reverse();
+
+    // 1.2. Processa Dados de Perda (Garante que data.lossReasons é um array)
+    const lossReasonsData = (data.lossReasons || []).map(item => ({ 
+        name: item.reason,
+        value: parseInt(item.count)
+    }));
+
+    // 1.3. Função auxiliar para formatar tempo (minutos)
+    const formatTime = (minutes) => {
+        if (!minutes || minutes < 0) return 'N/A';
+        if (minutes < 60) return `${Math.round(minutes)} min`;
+        const hours = Math.floor(minutes / 60);
+        const mins = Math.round(minutes % 60);
+        return `${hours}h ${mins} min`;
+    };
+
+
+    return (
+        <div className="space-y-8">
+            {/* ============================== 1. CARDS DE MÉTRICAS (Seguros, pois 'data' foi checado) ============================== */}
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                
+                {/* Card: Novos Leads */}
+                <div className="bg-blue-100 p-6 rounded-lg shadow-md flex justify-between items-center">
+                    <div>
+                        <p className="text-sm font-semibold text-blue-800">Novos Leads</p>
+                        <p className="text-3xl font-bold text-blue-900">{data.newLeads}</p>
+                    </div>
+                </div>
+
+                {/* Card: Taxa de Conversão Geral */}
+                <div className="bg-green-100 p-6 rounded-lg shadow-md flex justify-between items-center">
+                    <div>
+                        <p className="text-sm font-semibold text-green-800">Taxa de Conversão Geral</p>
+                        <p className="text-3xl font-bold text-green-900">{data.conversionRate}</p>
+                    </div>
+                </div>
+                
+                {/* Card: Tempo Médio de Resposta */}
+                <div className="bg-yellow-100 p-6 rounded-lg shadow-md flex justify-between items-center">
+                    <div>
+                        <p className="text-sm font-semibold text-yellow-800">Tempo Médio de Resposta</p>
+                        <p className="text-3xl font-bold text-yellow-900">{formatTime(data.avgResponseTime)}</p>
+                    </div>
+                </div>
+                
+                {/* Card: Valor Total em Negociação */}
+                <div className="bg-purple-100 p-6 rounded-lg shadow-md flex justify-between items-center">
+                    <div>
+                        <p className="text-sm font-semibold text-purple-800">Valor em Negociação</p>
+                        {/* Garante que o valor existe antes de chamar toLocaleString */}
+                        <p className="text-3xl font-bold text-purple-900">R$ {(data.totalValueInNegotiation || 0).toLocaleString('pt-BR')}</p>
+                    </div>
+                </div>
+            </div>
+
+            {/* ============================== 2. FUNIL DE VENDAS E PERFORMANCE ============================== */}
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                
+                {/* COLUNA ESQUERDA: FUNIL DE VENDAS */}
+                <div className="lg:col-span-1 bg-white p-6 rounded-lg shadow-md">
+                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Funil de Vendas (Pipeline)</h2>
+                    
+                    <div className="h-96 flex items-center justify-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <BarChart 
+                                layout="vertical" 
+                                data={reversedFunnel} 
+                                margin={{ top: 10, right: 30, left: 10, bottom: 5 }}
+                                barCategoryGap="0%" 
+                                stackOffset="sign"
+                            >
+                                <YAxis 
+                                    dataKey="status" 
+                                    type="category" 
+                                    axisLine={false} 
+                                    tickLine={false} 
+                                    width={120} 
+                                    tick={({ x, y, payload }) => (
+                                        <g transform={`translate(${x},${y})`}>
+                                            <text x={0} y={0} dy={5} textAnchor="end" fill="#666" fontSize={10}>
+                                                {payload.value} ({payload.payload.count})
+                                            </text>
+                                        </g>
+                                    )}
+                                />
+                                <XAxis 
+                                    type="number" 
+                                    hide={true} 
+                                    domain={[0, totalLeads]} 
+                                />
+                                <Tooltip 
+                                    formatter={(value, name, props) => [`Leads: ${value}`, props.payload.status]} 
+                                    labelFormatter={(label) => `Estágio: ${label}`}
+                                />
+                                
+                                <Bar dataKey="count" isAnimationActive={false}>
+                                    {reversedFunnel.map((entry, index) => (
+                                        <Cell 
+                                            key={`cell-${index}`} 
+                                            fill={FUNNEL_COLORS[STATUS_ORDER.indexOf(entry.status)]} 
+                                        />
+                                    ))}
+                                </Bar>
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* COLUNAS DIREITAS: TABELA DE PERFORMANCE */}
+                <div className="lg:col-span-2 bg-white p-6 rounded-lg shadow-md overflow-x-auto">
+                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Performance Individual dos Vendedores</h2>
+                    <table className="min-w-full divide-y divide-gray-200">
+                        <thead className="bg-gray-50">
+                            <tr>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendedor</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Leads Ativos</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Vendas Ganhas</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Taxa Conv.</th>
+                                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Tempo Fecham.</th>
+                            </tr>
+                        </thead>
+                        <tbody className="bg-white divide-y divide-gray-200">
+                            {/* Garante que data.sellerPerformance é um array */}
+                            {(data.sellerPerformance || []).map((seller, index) => ( 
+                                <tr key={index}>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">{seller.name}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{seller.activeLeads}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{seller.wonLeads}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-green-600 font-bold">{seller.conversionRate}</td>
+                                    <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">{seller.avgTimeToClose} dias</td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+            
+            {/* ============================== 3. ANÁLISE ESTRATÉGICA ============================== */}
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                
+                {/* COLUNA ESQUERDA: ANÁLISE DE FUNIL POR ORIGEM */}
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Análise de Conversão por Origem</h2>
+                    <div className="h-80">
+                        <ResponsiveContainer width="100%" height="100%">
+                            {/* Garante que data.originAnalysis é um array */}
+                            <BarChart data={data.originAnalysis || []}> 
+                                <XAxis dataKey="origin" stroke="#888888" interval={0} angle={-25} textAnchor="end" height={60} />
+                                <YAxis yAxisId="left" orientation="left" stroke="#82ca9d" />
+                                <YAxis yAxisId="right" orientation="right" stroke="#8884d8" domain={[0, 100]} unit="%" />
+                                <Tooltip formatter={(value, name, props) => name === 'conversionRate' ? [`${value}%`, 'Taxa de Conversão'] : [value, name === 'totalLeads' ? 'Total Leads' : 'Leads Ganhos']} />
+                                <Bar yAxisId="left" dataKey="totalLeads" fill="#8884d8" name="Total de Leads" />
+                            </BarChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+
+                {/* COLUNA DIREITA: PRINCIPAIS RAZÕES DE PERDA */}
+                <div className="bg-white p-6 rounded-lg shadow-md">
+                    <h2 className="text-xl font-semibold mb-4 text-gray-700">Principais Razões de Perda</h2>
+                    <div className="h-80 flex justify-center items-center">
+                        <ResponsiveContainer width="100%" height="100%">
+                            <PieChart>
+                                <Pie
+                                    data={lossReasonsData}
+                                    dataKey="value"
+                                    nameKey="name"
+                                    cx="50%"
+                                    cy="50%"
+                                    outerRadius={80}
+                                    fill="#8884d8"
+                                    labelLine={false}
+                                    label={({ name, percent }) => `${name} (${(percent * 100).toFixed(0)}%)`}
+                                >
+                                    {lossReasonsData.map((entry, index) => (
+                                        <Cell key={`cell-${index}`} fill={['#FF6B6B', '#FFAA6B', '#FFD86B', '#A2FF6B', '#6BFFCE'][index % 5]} />
+                                    ))}
+                                </Pie>
+                                <Tooltip formatter={(value, name, props) => [value, props.payload.name]} />
+                            </PieChart>
+                        </ResponsiveContainer>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    );
 };
+
+export default ReportsDashboard;
