@@ -5,7 +5,9 @@ const { pool } = require('../config/db');
 const { generatePdfReport, generateCsvString } = require('../src/services/PDFGenerator');
 const { format } = require('date-fns');
 
-// Lógica de Obtenção de Dados (função auxiliar, mantida como estava)
+// =============================================================
+// FUNÇÃO AUXILIAR: Lógica de Obtenção de Dados (CORRIGIDA)
+// =============================================================
 const getFilteredLeadsWithSeller = async (filters) => {
     let query = `
         SELECT 
@@ -19,7 +21,9 @@ const getFilteredLeadsWithSeller = async (filters) => {
     const values = [];
     let valueIndex = 1;
 
-    if (!filters.isAdmin || (filters.isAdmin && filters.ownerId)) {
+    // CORREÇÃO CRÍTICA: Aplica o filtro de owner_id APENAS se o valor existir.
+    // Isso garante que Admin vendo "Todos" (com ownerId undefined/null) não filtre.
+    if (filters.ownerId) {
         query += ` AND l.owner_id = $${valueIndex}`;
         values.push(filters.ownerId);
         valueIndex++;
@@ -59,11 +63,20 @@ exports.getDashboardData = async (req, res) => {
 
         const isAdmin = req.user.role.toLowerCase() === 'admin';
 
-        const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id; 
+        // CORREÇÃO CRÍTICA NA LÓGICA: Determina o finalOwnerId
+        let finalOwnerId;
+        if (isAdmin) {
+            // Se for Admin, usa o ownerId passado na query string (se houver), 
+            // caso contrário, deixa finalOwnerId como undefined (para ver todos os leads).
+            finalOwnerId = ownerId || undefined; 
+        } else {
+            // Se não for Admin, deve sempre filtrar pelo seu próprio ID.
+            finalOwnerId = req.user.id;
+        }
 
         const filters = {
             startDate, endDate, 
-            ownerId: finalOwnerId, 
+            ownerId: finalOwnerId, // Pode ser undefined se Admin quiser ver tudo
             isAdmin, 
             origin
         };
@@ -160,14 +173,22 @@ exports.getDashboardData = async (req, res) => {
     }
 };
 
-// ... exports.exportReports (mantido como estava)
+// =============================================================
+// ENDPOINT DE EXPORTAÇÃO (CORRIGIDO)
+// =============================================================
 exports.exportReports = async (req, res) => {
     try {
         const { format: exportFormat, startDate, endDate, ownerId, origin } = req.query; 
 
         const isAdmin = req.user.role.toLowerCase() === 'admin';
 
-        const finalOwnerId = isAdmin && ownerId ? ownerId : req.user.id;
+        // CORREÇÃO CRÍTICA NA LÓGICA: Determina o finalOwnerId
+        let finalOwnerId;
+        if (isAdmin) {
+            finalOwnerId = ownerId || undefined; 
+        } else {
+            finalOwnerId = req.user.id;
+        }
 
         const filters = {
             startDate, endDate, 
@@ -176,7 +197,7 @@ exports.exportReports = async (req, res) => {
             origin
         };
 
-        // Lógica de filtro duplicada aqui para a exportação, conforme o arquivo anterior.
+        // Lógica de filtro duplicada aqui para a exportação (reconstruída com base na getFilteredLeadsWithSeller CORRIGIDA).
         let query = `
             SELECT 
                 l.*, 
@@ -189,7 +210,8 @@ exports.exportReports = async (req, res) => {
         const values = [];
         let valueIndex = 1;
 
-        if (!filters.isAdmin || (filters.isAdmin && filters.ownerId)) {
+        // USA A NOVA LÓGICA DE FILTRO: Só filtra se finalOwnerId existe
+        if (filters.ownerId) {
             query += ` AND l.owner_id = $${valueIndex}`;
             values.push(filters.ownerId);
             valueIndex++;
@@ -221,7 +243,8 @@ exports.exportReports = async (req, res) => {
 
 
         if (!leads || leads.length === 0) {
-            return res.status(404).json({ message: 'Nenhum dado encontrado para exportação.' });
+            // Retorna status 204 (No Content) ou 404 (Not Found)
+            return res.status(204).send(); 
         }
 
         if (exportFormat === 'csv') {
