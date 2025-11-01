@@ -20,9 +20,10 @@ const app = express();
 // Configuração de CORS
 // ===========================
 const allowedOrigins = [
-    "https://crm-frontend-rbza.onrender.com", 
-    "https://crm-front-renderer.onrender.com",
-    "http://localhost:5173" // desenvolvimento local
+    "https://crm-frontend-static.onrender.com", // 🔹 Novo Static Site
+    "https://crm-frontend-rbza.onrender.com",   // Antigo (opcional)
+    "https://crm-front-renderer.onrender.com",  // Antigo (opcional)
+    "http://localhost:5173"                     // Desenvolvimento local
 ];
 
 app.use(
