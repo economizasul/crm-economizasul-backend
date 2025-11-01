@@ -76,19 +76,8 @@ app.use('/api/v1/reports', reportsRoutes);
 app.use('/api/v1/configuracoes', configuracoesRoutes);
 
 
-// ===========================
-// 🩺 Health Check (teste rápido)
-// ===========================
-app.get("/", (req, res) => {
-    res.json({
-        message: "🚀 API CRM-EconomizaSul funcionando!",
-        status: "ok",
-    });
-});
-
-
 // ===================================
-// 🚨 CORREÇÃO CRÍTICA PARA SPA (React Router) EM WEB SERVICE
+// LÓGICA PARA SPA (React Router) EM WEB SERVICE
 // ===================================
 // Define o caminho para a pasta de build do frontend (assumindo 'dist')
 const frontendPath = path.join(__dirname, 'dist'); 
@@ -116,16 +105,27 @@ app.get('*', (req, res) => {
         res.sendFile(path.resolve(frontendPath, 'index.html'));
     } else {
         // Se for para a API e não caiu em nenhuma rota anterior (404 API), retorna 404
-        res.status(404).json({ error: 'API endpoint not found.' });
+        res.status(404).json({ message: 'Recurso da API não encontrado.' });
     }
 });
 
 
 // ===========================
-// 🚀 Inicialização do Servidor
+// 🩺 Health Check (teste rápido)
 // ===========================
-const PORT = process.env.PORT || 3000;
-
-app.listen(PORT, () => {
-    console.log(`Servidor rodando na porta ${PORT}`);
+app.get("/api/v1/health", (req, res) => {
+    res.json({
+        message: "🚀 API CRM-EconomizaSul funcionando!",
+        status: "ok",
+    });
 });
+
+// Define a porta
+const PORT = process.env.PORT || 5000;
+
+// Inicia o Servidor
+app.listen(PORT, () => {
+    console.log(`✅ Servidor rodando na porta ${PORT}`);
+});
+
+module.exports = app;
