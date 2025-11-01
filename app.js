@@ -8,9 +8,7 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
-// 🚨 NOVO: Middleware para History Fallback (para rotas do React Router)
-const history = require('connect-history-api-fallback'); 
-
+const history = require('connect-history-api-fallback'); // Para SPA React
 
 // Carrega variáveis de ambiente (.env)
 dotenv.config();
@@ -24,7 +22,7 @@ const app = express();
 const allowedOrigins = [
     "https://crm-frontend-rbza.onrender.com", 
     "https://crm-front-renderer.onrender.com",
-    "http://localhost:5173"
+    "http://localhost:5173" // desenvolvimento local
 ];
 
 app.use(
@@ -66,12 +64,13 @@ app.use("/api/v1/pipeline", pipelineRoutes);
 app.use('/api/v1/reports', reportsRoutes); 
 app.use('/api/v1/configuracoes', configuracoesRoutes);
 
-// ===================================
+// ===========================
 // LÓGICA PARA SPA (React Router) EM WEB SERVICE
-// ===================================
+// ===========================
 const frontendPath = path.join(__dirname, 'dist'); 
 
 // Middleware History Fallback para React Router
+// 🚨 Importante: garante que rotas /api não sejam reescritas
 app.use(history({
     rewrites: [
         {
@@ -81,16 +80,17 @@ app.use(history({
     ]
 }));
 
-// Serve os arquivos estáticos
+// Serve arquivos estáticos do build
 app.use(express.static(frontendPath));
 
-// 🔹 Fallback Final corrigido (usando '/*' ao invés de '*')
-app.get('/*', (req, res) => {
-    if (!req.url.startsWith('/api')) {
-        res.sendFile(path.resolve(frontendPath, 'index.html'));
-    } else {
-        res.status(404).json({ message: 'Recurso da API não encontrado.' });
+// SPA fallback final (corrigido para não quebrar PathError)
+app.use((req, res, next) => {
+    if (req.path.startsWith('/api')) {
+        // Se for rota de API, deixa passar para os handlers de API
+        return next();
     }
+    // Qualquer outra rota não encontrada: retorna index.html
+    res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
 // ===========================
@@ -103,8 +103,10 @@ app.get("/api/v1/health", (req, res) => {
     });
 });
 
+// Porta
 const PORT = process.env.PORT || 5000;
 
+// Inicia servidor
 app.listen(PORT, () => {
     console.log(`✅ Servidor rodando na porta ${PORT}`);
 });
