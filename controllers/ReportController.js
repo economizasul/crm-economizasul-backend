@@ -2,7 +2,7 @@
 
 const Lead = require('../models/Lead');
 const { pool } = require('../config/db'); 
-const { generatePdfReport, generateCsvString } = require('../src/services/PDFGenerator');
+const { generatePdfReport, generateCsvString } = require('../src/services/PDFGenerator'); // ✅ Caminho corrigido
 const { format } = require('date-fns');
 
 // =============================================================
@@ -21,8 +21,7 @@ const getFilteredLeadsWithSeller = async (filters) => {
     const values = [];
     let valueIndex = 1;
 
-    // CORREÇÃO CRÍTICA: Aplica o filtro de owner_id APENAS se o valor de filters.ownerId existir.
-    // Se Admin acessa sem filtro, filters.ownerId será undefined e este bloco será ignorado.
+    // Aplica o filtro de owner_id apenas se existir
     if (filters.ownerId) {
         query += ` AND l.owner_id = $${valueIndex}`;
         values.push(filters.ownerId);
@@ -66,15 +65,13 @@ exports.getDashboardData = async (req, res) => {
     try {
         const { startDate, endDate, ownerId, origin } = req.query;
 
-        const isAdmin = req.user.role.toLowerCase() === 'admin';
+        const isAdmin = (req.user && req.user.role && req.user.role.toLowerCase() === 'admin');
 
-        // LÓGICA DE FILTRO CORRIGIDA:
+        // Lógica de filtro: admin pode ver todos (se ownerId passado) ou todos se não passado; user comum vê apenas seus leads
         let finalOwnerId;
         if (isAdmin) {
-            // Admin: Usa o ownerId da query string (se houver), caso contrário, undefined (verá todos).
             finalOwnerId = ownerId || undefined; 
         } else {
-            // Usuário Comum: Sempre vê seus próprios leads.
             finalOwnerId = req.user.id;
         }
 
@@ -87,9 +84,6 @@ exports.getDashboardData = async (req, res) => {
 
         const leads = await getFilteredLeadsWithSeller(filters);
         
-        // ... (Resto da lógica de processamento de leads, Funil, Performance, Origem, etc. - Mantida)
-        // ...
-        
         const totalLeads = leads.length;
 
         const wonLeads = leads.filter(l => l.status === 'Ganho');
@@ -100,7 +94,7 @@ exports.getDashboardData = async (req, res) => {
             .filter(l => ['Em Negociação', 'Proposta Enviada'].includes(l.status))
             .reduce((sum, l) => sum + (l.estimated_savings || 0), 0);
             
-        const avgResponseTime = 32; 
+        const avgResponseTime = 32; // placeholder, adaptar quando houver logs de contato
 
         // --- Análise de Funil ---
         const funnelDataObj = leads.reduce((acc, l) => {
@@ -180,18 +174,15 @@ exports.getDashboardData = async (req, res) => {
     }
 };
 
-// ... (Resto do ReportController.js - exportReports - Mantido e corrigido com a mesma lógica de filtro)
-
 // =============================================================
-// ENDPOINT DE EXPORTAÇÃO (CORRIGIDO com a mesma lógica)
+// ENDPOINT DE EXPORTAÇÃO (CSV / PDF) - Mantém lógica com filtros
 // =============================================================
 exports.exportReports = async (req, res) => {
     try {
         const { format: exportFormat, startDate, endDate, ownerId, origin } = req.query; 
 
-        const isAdmin = req.user.role.toLowerCase() === 'admin';
+        const isAdmin = (req.user && req.user.role && req.user.role.toLowerCase() === 'admin');
 
-        // LÓGICA DE FILTRO CORRIGIDA:
         let finalOwnerId;
         if (isAdmin) {
             finalOwnerId = ownerId || undefined; 
@@ -206,7 +197,6 @@ exports.exportReports = async (req, res) => {
             origin
         };
         
-        // REPETE A LÓGICA DE FILTRO AQUI
         let query = `
             SELECT 
                 l.*, 
@@ -249,9 +239,7 @@ exports.exportReports = async (req, res) => {
         const result = await pool.query(query, values);
         const leads = result.rows;
 
-
         if (!leads || leads.length === 0) {
-            // Retorna status 204 (No Content) para indicar que não há conteúdo
             return res.status(204).send(); 
         }
 
@@ -261,14 +249,12 @@ exports.exportReports = async (req, res) => {
             res.setHeader('Content-Type', 'text/csv; charset=utf-8');
             res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
             res.send('\ufeff' + csvString); 
- 
         } else if (exportFormat === 'pdf') {
             const pdfBuffer = await generatePdfReport(leads, filters); 
 
             res.setHeader('Content-Type', 'application/pdf');
             res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf"`);
             return res.send(pdfBuffer);
-
         } else {
             return res.status(400).json({ message: 'Formato de exportação inválido.' });
         }
