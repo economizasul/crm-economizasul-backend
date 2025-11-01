@@ -8,6 +8,9 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
+// 🚨 NOVO: Middleware para History Fallback (para rotas do React Router)
+const history = require('connect-history-api-fallback'); 
+
 
 // Carrega variáveis de ambiente (.env)
 dotenv.config();
@@ -20,7 +23,7 @@ const app = express();
 // ===========================
 const allowedOrigins = [
     // 🚨 ATUALIZE com os domínios do seu frontend
-    "https://crm-frontend-rbza.onrender.com",
+    "https://crm-frontend-rbza.onrender.com", 
     "https://crm-front-renderer.onrender.com",
     "http://localhost:5173" // desenvolvimento local
 ];
@@ -84,13 +87,45 @@ app.get("/", (req, res) => {
 });
 
 
-// ===========================
-// 👂 Iniciar o Servidor
-// ===========================
-const PORT = process.env.PORT || 5000;
+// ===================================
+// 🚨 CORREÇÃO CRÍTICA PARA SPA (React Router) EM WEB SERVICE
+// ===================================
+// Define o caminho para a pasta de build do frontend (assumindo 'dist')
+const frontendPath = path.join(__dirname, 'dist'); 
 
-app.listen(PORT, () => {
-    console.log(`⚡️ Servidor rodando na porta ${PORT}`);
+// 1. Middleware para reescrever as rotas (O History Fallback)
+// Ele intercepta rotas não-API e as reescreve internamente para index.html
+app.use(history({
+    // Isso é crucial: garante que chamadas para /api/v1/* NÃO sejam reescritas
+    rewrites: [
+        {
+            from: /^\/api\/v1\/.*$/,
+            to: (context) => context.parsedUrl.pathname
+        }
+    ]
+}));
+
+// 2. Serve os arquivos estáticos da pasta de build ('dist')
+// O Render irá usar este middleware para servir o index.html após a reescrita acima
+app.use(express.static(frontendPath));
+
+// 3. Fallback Final (Opcional, mas robusto): Garante que a raiz do frontend é o index.html
+app.get('*', (req, res) => {
+    // Apenas se a requisição não for para a API, sirva o index.html
+    if (!req.url.startsWith('/api')) {
+        res.sendFile(path.resolve(frontendPath, 'index.html'));
+    } else {
+        // Se for para a API e não caiu em nenhuma rota anterior (404 API), retorna 404
+        res.status(404).json({ error: 'API endpoint not found.' });
+    }
 });
 
-module.exports = app;
+
+// ===========================
+// 🚀 Inicialização do Servidor
+// ===========================
+const PORT = process.env.PORT || 3000;
+
+app.listen(PORT, () => {
+    console.log(`Servidor rodando na porta ${PORT}`);
+});
