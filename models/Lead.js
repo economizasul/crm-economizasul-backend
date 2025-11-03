@@ -1,4 +1,4 @@
-// models/Lead.js
+// models/Lead.js - CÓDIGO FINAL CORRIGIDO PARA EVITAR ERRO DE "undefined" no owner_id
 
 const { pool } = require('../config/db');
 
@@ -74,7 +74,7 @@ class Lead {
         }
     }
     
-    // 3. Busca Todos os Leads (CRÍTICO: Função que alimenta o Kanban e deve usar LEFT JOIN e filtros)
+    // 3. Busca Todos os Leads (CRÍTICO: Função que alimenta o Kanban e deve usar LEFT JOIN e filtros - Mantida)
     static async findAll({ userId, role, search, status, origin }) {
         const isAdmin = role === 'admin';
         
@@ -147,7 +147,7 @@ class Lead {
         }
     }
     
-    // 5. Atualiza Lead (Completo - Mantida)
+    // 5. Atualiza Lead (Completo - CORRIGIDA)
     static async update(id, { 
         name, phone, document, address, status, origin, 
         ownerId, 
@@ -162,18 +162,22 @@ class Lead {
             `notes = $12`, `qsa = $13`, `lat = $14`, `lng = $15`, 
             `reason_for_loss = $16`
         ];
+        
+        // CORREÇÃO CRÍTICA: Tratar ownerId para evitar erro de tipo "undefined" ou "null" no INTEGER
+        const safeOwnerId = ownerId === undefined || ownerId === null || isNaN(parseInt(ownerId)) ? null : parseInt(ownerId);
+
         const values = [
             name, phone, document, address, status, origin,
-            ownerId,          
-            email,            
-            uc,               
+            safeOwnerId, // <-- CORRIGIDO
+            email,
+            uc, 
             avgConsumption ? parseFloat(avgConsumption) : null, 
             estimatedSavings ? parseFloat(estimatedSavings) : null, 
-            notes,            
-            qsa,              
-            lat,              
-            lng,              
-            reasonForLoss     // $16
+            notes,
+            qsa, 
+            lat, 
+            lng, 
+            reasonForLoss  // $16
         ];
 
         // Adiciona date_won se o status for 'Ganho'
@@ -231,7 +235,7 @@ class Lead {
         }
     }
     
-    // 7. Exclui Lead (Presumido)
+    // 7. Exclui Lead (Presumido - Mantida)
     static async delete(id) { 
         const query = 'DELETE FROM leads WHERE id = $1 RETURNING id';
         try {
@@ -247,7 +251,7 @@ class Lead {
     // NOVAS FUNÇÕES PARA RELATÓRIOS (Mantidas)
     // =============================================================
     
-    // 8. Busca dados para o Dashboard de Métricas
+    // 8. Busca dados para o Dashboard de Métricas (Mantida)
     static async getDashboardMetrics(ownerId, isAdmin, startDate, endDate) {
         // Lógica de filtragem de Leads por período e proprietário (se não for Admin)
         let baseCondition = `1=1`;
@@ -308,7 +312,7 @@ class Lead {
         }
     }
     
-    // 9. Funil de Vendas e Performance de Vendedores
+    // 9. Funil de Vendas e Performance de Vendedores (Mantida)
     static async getFunnelAndPerformance(filters) {
          // O ReportController deve ser responsável por passar os filtros corretos aqui
          const query = `
