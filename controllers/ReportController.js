@@ -187,33 +187,33 @@ exports.exportReports = async (req, res) => {
             return res.status(204).send();
         }
 
-        // Lógica de exportação (Mantida)
-        const filters = req.query; // Para o PDF, as datas são necessárias
-        
-        if (exportFormat === 'csv') {
-            if (typeof generateCsvString !== 'function') {
-                console.error('generateCsvString não disponível.');
-                return res.status(500).json({ error: 'Serviço CSV não disponível.' });
-            }
-            const csvString = await generateCsvString(leads);
-            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
-            return res.send('\ufeff' + csvString);
-        } else if (exportFormat === 'pdf') {
-            if (typeof generatePdfReport !== 'function') {
-                console.error('generatePdfReport não disponível.');
-                return res.status(500).json({ error: 'Serviço PDF não disponível.' });
-            }
-            const pdfBuffer = await generatePdfReport(leads, filters);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf"`);
-            return res.send(pdfBuffer);
-        } else {
-            return res.status(400).json({ message: 'Formato de exportação inválido.' });
-        }
+        // Lógica de exportação (Mantida)
+        const filters = req.query; // Para o PDF, as datas são necessárias
 
-    } catch (error) {
-        console.error('Erro na exportação de relatórios:', error);
-        return res.status(500).json({ error: 'Erro interno ao exportar relatórios.' });
-    }
+        if (exportFormat === 'csv') {
+            if (typeof generateCsvString !== 'function') {
+                console.error('generateCsvString não disponível.');
+                return res.status(500).json({ error: 'Serviço CSV não disponível.' });
+            }
+            const csvString = await generateCsvString(leads);
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
+            return res.send('\ufeff' + csvString);
+        } else if (exportFormat === 'pdf') {
+            if (typeof generatePdfReport !== 'function') {
+                console.error('generatePdfReport não disponível.');
+                return res.status(500).json({ error: 'Serviço PDF não disponível.' });
+            }
+            const pdfBuffer = await generatePdfReport(leads, filters);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf"`);
+            return res.send(pdfBuffer);
+        } else {
+            return res.status(400).json({ message: 'Formato de exportação inválido.' });
+        }
+
+    } catch (error) {
+        console.error('Erro na exportação de relatórios:', error);
+        return res.status(500).json({ error: 'Erro interno ao exportar relatórios.' });
+    }
 };
