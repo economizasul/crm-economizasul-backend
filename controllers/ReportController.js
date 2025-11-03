@@ -159,7 +159,7 @@ class ReportController {
                 yPosition += 15;
             }
 
-            // --- Fim do Conteúdo ---
+            // -- Fim do Conteúdo --
             doc.end();
 
         } catch (error) {
