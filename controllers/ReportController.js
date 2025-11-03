@@ -18,7 +18,7 @@ const { generatePdfReport, generateCsvString } = pdfHelpers;
 const { format } = require('date-fns');
 
 // =============================================================
-// FUNÇÃO AUXILIAR: Constrói os filtros de consulta
+// FUNÇÃO AUXILIAR: Constrói os filtros de consulta (Mantida)
 // =============================================================
 const buildQueryFilters = (req, useLeadAlias = false) => {
     const { startDate, endDate, ownerId: queryOwnerId, origin } = req.query;
@@ -82,9 +82,8 @@ exports.getDashboardData = async (req, res) => {
     try {
         console.log(`[ReportController] getDashboardData called user=${req.user?.id || 'anon'} query=${JSON.stringify(req.query)}`);
         
-        // 1. Constrói os filtros
+        // 1. Constrói os filtros
         const { condition: baseCondition, params: values } = buildQueryFilters(req, false);
-        // Para o Seller Performance, precisamos dos prefixos 'l.' no ON do JOIN
         const { condition: sellerCondition, params: sellerValues } = buildQueryFilters(req, true);
 
 
@@ -102,15 +101,29 @@ exports.getDashboardData = async (req, res) => {
             Lead.getFunnelData(baseCondition, values),
             Lead.getSellerPerformance(sellerCondition, sellerValues),
             Lead.getLossReasons(baseCondition, values),
-            Lead.getOriginAnalysis(baseCondition, values) // Novo
+            Lead.getOriginAnalysis(baseCondition, values) 
         ]);
 
         // Verifica se há dados suficientes (baseado em leads totais)
         const totalLeads = Number(simpleMetrics.total_leads || 0);
 
         if (totalLeads === 0) {
-            console.log('[ReportController] No leads found for given filters -> returning 204');
-            return res.status(204).send();
+            console.log('[ReportController] No leads found for given filters -> returning 200 with empty dashboard structure');
+            
+            // CORREÇÃO CRÍTICA: Retorna 200 OK com uma estrutura vazia
+            const emptyDashboard = {
+                newLeads: 0,
+                activeLeads: 0,
+                conversionRate: '0%',
+                avgResponseTime: 0,
+                avgTimeToClose: 0,
+                totalValueInNegotiation: 0,
+                funnelData: [],
+                sellerPerformance: [],
+                originAnalysis: [],
+                lossReasons: []
+            };
+            return res.status(200).json(emptyDashboard);
         }
 
         const totalWonLeads = Number(simpleMetrics.total_won_leads || 0);
@@ -121,10 +134,10 @@ exports.getDashboardData = async (req, res) => {
             activeLeads: Number(simpleMetrics.active_leads || 0),
             conversionRate: (totalLeads > 0 ? ((totalWonLeads / totalLeads) * 100).toFixed(1) : 0) + '%',
             avgResponseTime: Math.round(Number(timeMetrics.avg_response_time_minutes || 0)),
-            avgTimeToClose: Math.round(Number(timeMetrics.avg_time_to_close_days || 0)), // NOVO (do timeMetrics)
+            avgTimeToClose: Math.round(Number(timeMetrics.avg_time_to_close_days || 0)), 
             totalValueInNegotiation: Number(simpleMetrics.total_value_in_negotiation || 0),
             
-            funnelData, // Já formatado no modelo
+            funnelData, 
             
             // Formatação do Seller Performance (Calcula a Taxa de Conversão aqui)
             sellerPerformance: sellerPerformance.map(p => ({
@@ -136,14 +149,14 @@ exports.getDashboardData = async (req, res) => {
                 avgTimeToClose: Math.round(Number(p.avg_time_to_close || 0))
             })),
             
-            originAnalysis: originAnalysis.map(o => ({ // Formata a Origem
+            originAnalysis: originAnalysis.map(o => ({ 
                 origin: o.origin,
                 totalLeads: Number(o.total_leads),
                 wonLeads: Number(o.won_leads),
                 conversionRate: (Number(o.total_leads) > 0 ? ((Number(o.won_leads) / Number(o.total_leads)) * 100).toFixed(1) : 0) + '%',
             })),
 
-            lossReasons: lossReasons.map(r => ({ reason: r.reason_for_loss, count: Number(r.count) })) // Formata a Razão de Perda
+            lossReasons: lossReasons.map(r => ({ reason: r.reason_for_loss, count: Number(r.count) })) 
         };
 
         console.log(`[ReportController] getDashboardData returning dashboard with ${totalLeads} leads`);
@@ -156,7 +169,7 @@ exports.getDashboardData = async (req, res) => {
 };
 
 // =============================================================
-// ENDPOINT DE EXPORTAÇÃO (CSV / PDF) - MANTIDO E OTIMIZADO
+// ENDPOINT DE EXPORTAÇÃO (CSV / PDF) - OTIMIZADO (Mantido)
 // =============================================================
 exports.exportReports = async (req, res) => {
     try {
@@ -165,7 +178,6 @@ exports.exportReports = async (req, res) => {
         const { format: exportFormat } = req.query;
 
         // Reutiliza a função de filtro para garantir consistência
-        // Aqui, precisamos da lista completa de leads para exportar, então montamos a query completa.
         const { condition: baseCondition, params: values } = buildQueryFilters(req, true); 
 
         let query = `
@@ -187,33 +199,33 @@ exports.exportReports = async (req, res) => {
             return res.status(204).send();
         }
 
-        // Lógica de exportação (Mantida)
-        const filters = req.query; // Para o PDF, as datas são necessárias
+        // Lógica de exportação (Mantida)
+        const filters = req.query; 
+        
+        if (exportFormat === 'csv') {
+            if (typeof generateCsvString !== 'function') {
+                console.error('generateCsvString não disponível.');
+                return res.status(500).json({ error: 'Serviço CSV não disponível.' });
+            }
+            const csvString = await generateCsvString(leads);
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
+            return res.send('\ufeff' + csvString);
+        } else if (exportFormat === 'pdf') {
+            if (typeof generatePdfReport !== 'function') {
+                console.error('generatePdfReport não disponível.');
+                return res.status(500).json({ error: 'Serviço PDF não disponível.' });
+            }
+            const pdfBuffer = await generatePdfReport(leads, filters);
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf"`);
+            return res.send(pdfBuffer);
+        } else {
+            return res.status(400).json({ message: 'Formato de exportação inválido.' });
+        }
 
-        if (exportFormat === 'csv') {
-            if (typeof generateCsvString !== 'function') {
-                console.error('generateCsvString não disponível.');
-                return res.status(500).json({ error: 'Serviço CSV não disponível.' });
-            }
-            const csvString = await generateCsvString(leads);
-            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
-            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.csv"`);
-            return res.send('\ufeff' + csvString);
-        } else if (exportFormat === 'pdf') {
-            if (typeof generatePdfReport !== 'function') {
-                console.error('generatePdfReport não disponível.');
-                return res.status(500).json({ error: 'Serviço PDF não disponível.' });
-            }
-            const pdfBuffer = await generatePdfReport(leads, filters);
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', `attachment; filename="leads_report_${format(new Date(), 'yyyyMMdd_HHmmss')}.pdf"`);
-            return res.send(pdfBuffer);
-        } else {
-            return res.status(400).json({ message: 'Formato de exportação inválido.' });
-        }
-
-    } catch (error) {
-        console.error('Erro na exportação de relatórios:', error);
-        return res.status(500).json({ error: 'Erro interno ao exportar relatórios.' });
-    }
+    } catch (error) {
+        console.error('Erro na exportação de relatórios:', error);
+        return res.status(500).json({ error: 'Erro interno ao exportar relatórios.' });
+    }
 };
