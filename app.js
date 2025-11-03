@@ -9,7 +9,7 @@ const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
 const history = require('connect-history-api-fallback'); 
-const { pool } = require('./config/db'); // Importa o pool para testar a conexão
+const { pool } = require('./config/db');
 
 // Carrega variáveis de ambiente (.env)
 dotenv.config();
@@ -57,6 +57,7 @@ const leadRoutes = require("./routes/leadRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const pipelineRoutes = require("./routes/pipelineRoutes");
 const reportsRoutes = require('./routes/reports');
+const userRoutes = require('./routes/users');
 const configuracoesRoutes = require('./routes/configuracoes');
 
 // ===========================
@@ -67,7 +68,8 @@ app.use("/api/v1/users", userRoutes);
 app.use("/api/v1/leads", leadRoutes);
 app.use("/api/v1/clients", clientRoutes);
 app.use("/api/v1/pipeline", pipelineRoutes);
-app.use('/api/v1/reports', reportsRoutes); 
+app.use('/api/v1/reports', reportsRoutes);
+app.use('/api/v1/users', userRoutes); 
 app.use('/api/v1/configuracoes', configuracoesRoutes);
 
 // ===========================
