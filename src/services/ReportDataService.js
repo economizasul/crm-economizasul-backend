@@ -1,8 +1,8 @@
 // src/services/ReportDataService.js
 
 const { pool } = require('../../config/db');
-// Assumindo que você tem um utilitário para formatar datas e construir WHERE clauses
-const SqlUtils = require('../../utils/SqlUtils'); 
+// ❌ IMPORTAÇÃO DO SQLUTILS REMOVIDA:
+// const SqlUtils = require('../../utils/SqlUtils'); 
 
 class ReportDataService {
     
@@ -67,11 +67,71 @@ class ReportDataService {
         
         return { whereClause, values };
     }
-    
-    // ... (Outros métodos auxiliares como _getAllLeads) ...
 
     // =============================================================
-    // 2. BUSCA PRINCIPAL (Métricas para o Dashboard)
+    // 3. BUSCA DOS MOTIVOS DE PERDA (LOST REASONS)
+    // =============================================================
+
+    async getLostReasonsAnalysis(filters, userId, isAdmin) {
+        // Reutiliza a função _buildBaseConditions, mas foca em leads perdidos
+        const { whereClause, values } = this._buildBaseConditions(filters, userId, isAdmin);
+        
+        // A QUERY É IDÊNTICA, MAS A CLÁUSULA WHERE É AJUSTADA PARA O CONTEXTO
+        // USAMOS L.CREATED_AT PARA FILTRAR
+        const query = `
+            SELECT 
+                l.lost_reason AS reason,
+                COUNT(l.id) AS count
+            FROM leads l
+            ${whereClause}
+            AND l.stage = 'Fechado Perdido'
+            GROUP BY 1
+            ORDER BY count DESC;
+        `;
+
+        const result = await pool.query(query, values);
+        return {
+            reasons: result.rows,
+            totalLost: result.rows.reduce((sum, r) => sum + parseInt(r.count, 10), 0)
+        };
+    }
+
+    // =============================================================
+    // 4. BUSCA DAS ETAPAS DO FUNIL (FUNNEL STAGES)
+    // =============================================================
+
+    async getFunnelStages(filters, userId, isAdmin) {
+        const { whereClause, values } = this._buildBaseConditions(filters, userId, isAdmin);
+        
+        const query = `
+            SELECT 
+                l.stage AS stage_name,
+                COUNT(l.id) AS count
+            FROM leads l
+            ${whereClause}
+            GROUP BY 1
+            -- Ordena por uma ordem lógica do funil
+            ORDER BY 
+                CASE l.stage
+                    WHEN 'Primeiro Contato' THEN 1
+                    WHEN 'Qualificação' THEN 2
+                    WHEN 'Proposta' THEN 3
+                    WHEN 'Negociação' THEN 4
+                    WHEN 'Fechado Ganho' THEN 5
+                    WHEN 'Fechado Perdido' THEN 6
+                    ELSE 7
+                END;
+        `;
+
+        const result = await pool.query(query, values);
+        return result.rows.map(row => ({
+            stageName: row.stage_name,
+            count: parseInt(row.count, 10)
+        }));
+    }
+
+    // =============================================================
+    // 2. BUSCA PRINCIPAL (Métricas para o Dashboard) - AGORA INTEGRANDO TUDO
     // =============================================================
     
     /**
@@ -81,14 +141,36 @@ class ReportDataService {
         try {
             const { whereClause, values } = this._buildBaseConditions(filters, userId, isAdmin);
             
-            // ⚠️ AQUI ESTÁ A CHAVE: Rodar uma única consulta complexa para todas as métricas
-
-            const query = `
+            // 1. Executa a consulta principal de métricas agregadas
+            const metricsQuery = `
                 WITH BaseLeads AS (
                     -- Seleciona todos os leads ativos com os filtros aplicados
                     SELECT 
                         l.id, l.stage, l.value, l.created_at, l.updated_at,
-                        -- Adiciona um campo de 'dias de fechamento' para cálculo da média
+                        CASE 
+                            WHEN l.stage = 'Fechado Ganho' THEN EXTRACT(DAY FROM (l.updated_at - l.created_at))
+                            ELSE NULL 
+                        END AS closing_days
+                    FROM leads l
+                    ${whereClause}
+                ),
+                WonLeads AS ( ... ), -- CTEs de Won, Lost, Active Leads (Mantidas do código anterior)
+                LostLeads AS ( ... ),
+                ActiveLeads AS ( ... )
+                
+                -- Seções de CTEs aqui para otimização...
+                -- Devido ao limite de tamanho, a query principal será reescrita como múltiplas consultas 
+                -- para integrar os resultados dos métodos auxiliares.
+            `;
+            
+            // ⚠️ Para simplificar e garantir que os dados de Funil e LostReasons sejam populados,
+            // vamos chamar os métodos auxiliares aqui.
+            
+            // A. Chama a query principal de métricas (mantendo a otimização de uma única query)
+            const mainQuery = `
+                WITH BaseLeads AS (
+                    SELECT 
+                        l.id, l.stage, l.value, l.created_at, l.updated_at,
                         CASE 
                             WHEN l.stage = 'Fechado Ganho' THEN EXTRACT(DAY FROM (l.updated_at - l.created_at))
                             ELSE NULL 
@@ -97,39 +179,22 @@ class ReportDataService {
                     ${whereClause}
                 ),
                 WonLeads AS (
-                    -- Leads Fechados Ganhos (para valor e quantidade)
-                    SELECT
-                        COUNT(id) AS total_won_count,
-                        COALESCE(SUM(value), 0) AS total_won_value,
-                        COALESCE(AVG(closing_days), 0) AS avg_closing_time_days
-                    FROM BaseLeads
-                    WHERE stage = 'Fechado Ganho'
+                    SELECT COUNT(id) AS total_won_count, COALESCE(SUM(value), 0) AS total_won_value, COALESCE(AVG(closing_days), 0) AS avg_closing_time_days
+                    FROM BaseLeads WHERE stage = 'Fechado Ganho'
                 ),
                 LostLeads AS (
-                    -- Leads Fechados Perdidos (para taxa de perda e motivos)
-                    SELECT
-                        COUNT(id) AS total_lost_count
-                    FROM BaseLeads
-                    WHERE stage = 'Fechado Perdido'
+                    SELECT COUNT(id) AS total_lost_count FROM BaseLeads WHERE stage = 'Fechado Perdido'
                 ),
                 ActiveLeads AS (
-                    -- Leads Ativos (para total e ponderação de forecast)
                     SELECT
                         COUNT(id) AS leads_active,
                         COALESCE(SUM(value * (
-                            CASE stage
-                                WHEN 'Qualificação' THEN 0.25
-                                WHEN 'Proposta' THEN 0.50
-                                WHEN 'Negociação' THEN 0.75
-                                ELSE 0.05 -- Peso baixo para 'Primeiro Contato'
-                            END
+                            CASE stage WHEN 'Qualificação' THEN 0.25 WHEN 'Proposta' THEN 0.50 WHEN 'Negociação' THEN 0.75 ELSE 0.05 END
                         )), 0) AS weighted_value,
                         COALESCE(SUM(value), 0) AS total_pipeline_value
-                    FROM BaseLeads
-                    WHERE stage NOT IN ('Fechado Ganho', 'Fechado Perdido')
+                    FROM BaseLeads WHERE stage NOT IN ('Fechado Ganho', 'Fechado Perdido')
                 )
                 
-                -- Combina todos os resultados em uma única linha
                 SELECT
                     (SELECT leads_active FROM ActiveLeads) AS leads_active,
                     (SELECT total_won_count FROM WonLeads) AS total_won_count,
@@ -138,21 +203,23 @@ class ReportDataService {
                     (SELECT total_lost_count FROM LostLeads) AS total_lost_count,
                     (SELECT weighted_value FROM ActiveLeads) AS weighted_value,
                     (SELECT total_pipeline_value FROM ActiveLeads) AS total_pipeline_value,
-                    -- Total geral para cálculo de taxa de conversão
-                    (SELECT COUNT(id) FROM BaseLeads) AS total_leads_base
+                    (SELECT COUNT(id) FROM BaseLeads) AS total_leads_base;
             `;
 
-            const result = await pool.query(query, values);
+            const result = await pool.query(mainQuery, values);
             const rawMetrics = result.rows[0];
             
-            // Cálculo de Taxas
-            const totalLeadsConsidered = rawMetrics.total_leads_base; // Total de leads na base de filtros
-            
-            // Prepara o objeto final formatado
+            const totalLeadsConsidered = rawMetrics.total_leads_base; 
+
+            // B. Chama os métodos auxiliares
+            const lostLeadsAnalysis = await this.getLostReasonsAnalysis(filters, userId, isAdmin);
+            const funnelStages = await this.getFunnelStages(filters, userId, isAdmin);
+
+            // C. Prepara o objeto final formatado
             return {
                 productivity: {
                     leadsActive: rawMetrics.leads_active,
-                    totalWonCount: rawMetrics.total_won_count,
+                    totalWonCount: parseInt(rawMetrics.total_won_count),
                     totalWonValue: rawMetrics.total_won_value,
                     avgClosingTimeDays: rawMetrics.avg_closing_time_days,
                     lossRate: totalLeadsConsidered > 0 ? rawMetrics.total_lost_count / totalLeadsConsidered : 0,
@@ -162,9 +229,8 @@ class ReportDataService {
                     weightedValue: rawMetrics.weighted_value,
                     totalValue: rawMetrics.total_pipeline_value,
                 },
-                // ... (Faltam funil e motivos de perda, veja os passos 3 e 4)
-                funnelStages: [], 
-                lostLeadsAnalysis: { reasons: [], totalLost: rawMetrics.total_lost_count },
+                funnelStages: funnelStages, 
+                lostLeadsAnalysis: lostLeadsAnalysis,
             };
 
         } catch (error) {
@@ -174,74 +240,11 @@ class ReportDataService {
     }
     
     // =============================================================
-    // 3. BUSCA DOS MOTIVOS DE PERDA (LOST REASONS)
-    // =============================================================
-
-    async getLostReasonsAnalysis(filters, userId, isAdmin) {
-         // Reutiliza a função _buildBaseConditions, mas foca em leads perdidos
-         const { whereClause, values } = this._buildBaseConditions(filters, userId, isAdmin);
-         
-         const query = `
-            SELECT 
-                l.lost_reason AS reason,
-                COUNT(l.id) AS count
-            FROM leads l
-            ${whereClause}
-            AND l.stage = 'Fechado Perdido'
-            GROUP BY 1
-            ORDER BY count DESC;
-         `;
-
-         const result = await pool.query(query, values);
-         return {
-             reasons: result.rows,
-             totalLost: result.rows.reduce((sum, r) => sum + parseInt(r.count, 10), 0)
-         };
-    }
-
-    // =============================================================
-    // 4. BUSCA DAS ETAPAS DO FUNIL (FUNNEL STAGES)
-    // =============================================================
-
-    async getFunnelStages(filters, userId, isAdmin) {
-         const { whereClause, values } = this._buildBaseConditions(filters, userId, isAdmin);
-         
-         const query = `
-             SELECT 
-                 l.stage AS stage_name,
-                 COUNT(l.id) AS count
-             FROM leads l
-             ${whereClause}
-             GROUP BY 1
-             -- Ordena por uma ordem lógica do funil
-             ORDER BY 
-                 CASE l.stage
-                     WHEN 'Primeiro Contato' THEN 1
-                     WHEN 'Qualificação' THEN 2
-                     WHEN 'Proposta' THEN 3
-                     WHEN 'Negociação' THEN 4
-                     WHEN 'Fechado Ganho' THEN 5
-                     WHEN 'Fechado Perdido' THEN 6
-                     ELSE 7
-                 END;
-         `;
-
-         const result = await pool.query(query, values);
-         return result.rows.map(row => ({
-             stageName: row.stage_name,
-             count: parseInt(row.count, 10)
-         }));
-    }
-    
-    // =============================================================
     // 5. BUSCA DO RELATÓRIO ANALÍTICO (ANALYTIC NOTES)
     // =============================================================
 
     async getAnalyticNotes(leadId) {
-        // ... (Implementação para buscar lead, anotações e vendedor, conforme planejado)
-        // Esta é a consulta mais complexa de ser otimizada em um único passo, 
-        // mas aqui está a base:
-        
+        // ... (Implementação para buscar lead, anotações e vendedor, mantida do código anterior)
         const leadInfoQuery = `
             SELECT 
                 l.id, l.name, l.stage, l.value, l.source, l.owner_id AS "ownerId",
