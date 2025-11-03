@@ -3,7 +3,7 @@
 const { pool } = require('../config/db');
 
 class Lead {
-    // 1. Cria a tabela de Leads se não existir (Mantida)
+    // 1. Cria a tabela de Leads se não existir (CORRIGIDA)
     static async createTable() {
         const query = `
             CREATE TABLE IF NOT EXISTS leads (
@@ -34,6 +34,7 @@ class Lead {
             await pool.query(query);
             console.log("Tabela 'leads' verificada/criada com sucesso.");
         } catch (error) {
+            // Se o erro do DB acontecer aqui, ele será capturado
             console.error("Erro ao criar tabela 'leads':", error);
             throw error;
         }
