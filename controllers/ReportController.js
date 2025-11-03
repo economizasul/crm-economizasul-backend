@@ -1,4 +1,4 @@
-// controllers/ReportController.js
+// controllers/ReportController.js (CÓDIGO CORRIGIDO)
 
 const { pool } = require('../config/db');
 const Lead = require('../models/Lead'); // Importa o modelo Lead refatorado
@@ -76,7 +76,7 @@ const buildQueryFilters = (req, useLeadAlias = false) => {
 
 
 // =============================================================
-// ENDPOINT PRINCIPAL DO DASHBOARD (MÉTRICAS) - OTIMIZADO
+// ENDPOINT PRINCIPAL DO DASHBOARD (MÉTRICAS) - CORRIGIDO
 // =============================================================
 exports.getDashboardData = async (req, res) => {
     try {
@@ -87,14 +87,14 @@ exports.getDashboardData = async (req, res) => {
         const { condition: sellerCondition, params: sellerValues } = buildQueryFilters(req, true);
 
 
-        // 2. EXECUTA TODAS AS QUERIES EM PARALELO (Otimização CRÍTICA)
+        // 2. EXECUTA TODAS AS QUERIES EM PARALELO 
         const [
             simpleMetrics,
             timeMetrics,
-            funnelData,
-            sellerPerformance,
-            lossReasons,
-            originAnalysis
+            funnelDataRaw, // Variável renomeada para indicar que é o resultado raw
+            sellerPerformanceRaw, // Variável renomeada
+            lossReasonsRaw, // Variável renomeada
+            originAnalysisRaw // Variável renomeada
         ] = await Promise.all([
             Lead.getSimpleMetrics(baseCondition, values),
             Lead.getTimeMetrics(baseCondition, values),
@@ -105,12 +105,12 @@ exports.getDashboardData = async (req, res) => {
         ]);
 
         // Verifica se há dados suficientes (baseado em leads totais)
-        const totalLeads = Number(simpleMetrics.total_leads || 0);
+        const totalLeads = Number(simpleMetrics?.total_leads || 0); // Uso de optional chaining para segurança
 
         if (totalLeads === 0) {
             console.log('[ReportController] No leads found for given filters -> returning 200 with empty dashboard structure');
             
-            // CORREÇÃO CRÍTICA: Retorna 200 OK com uma estrutura vazia
+            // Retorna 200 OK com uma estrutura vazia para parar o loading do frontend
             const emptyDashboard = {
                 newLeads: 0,
                 activeLeads: 0,
@@ -128,7 +128,7 @@ exports.getDashboardData = async (req, res) => {
 
         const totalWonLeads = Number(simpleMetrics.total_won_leads || 0);
         
-        // 3. Consolida e formata os resultados
+        // 3. Consolida e formata os resultados com DEFENSIVE CHECK
         const dashboard = {
             newLeads: totalLeads,
             activeLeads: Number(simpleMetrics.active_leads || 0),
@@ -137,33 +137,47 @@ exports.getDashboardData = async (req, res) => {
             avgTimeToClose: Math.round(Number(timeMetrics.avg_time_to_close_days || 0)), 
             totalValueInNegotiation: Number(simpleMetrics.total_value_in_negotiation || 0),
             
-            funnelData, 
+            // CORREÇÃO: Mapear e garantir que é um array para evitar crash e garantir tipo Number no count
+            funnelData: (Array.isArray(funnelDataRaw) ? funnelDataRaw : []).map(f => ({
+                status: f.status,
+                count: Number(f.count || 0) 
+            })),
             
-            // Formatação do Seller Performance (Calcula a Taxa de Conversão aqui)
-            sellerPerformance: sellerPerformance.map(p => ({
-                name: p.seller_name,
-                totalLeads: Number(p.total_leads),
-                wonLeads: Number(p.won_leads),
-                activeLeads: Number(p.active_leads),
-                conversionRate: (Number(p.total_leads) > 0 ? ((Number(p.won_leads) / Number(p.total_leads)) * 100).toFixed(1) : 0) + '%',
-                avgTimeToClose: Math.round(Number(p.avg_time_to_close || 0))
-            })),
+            // CORREÇÃO: Adiciona Array.isArray check para evitar crash no .map()
+            sellerPerformance: (Array.isArray(sellerPerformanceRaw) ? sellerPerformanceRaw : []).map(p => {
+                const pTotal = Number(p.total_leads || 0);
+                const pWon = Number(p.won_leads || 0);
+                return {
+                    name: p.seller_name,
+                    totalLeads: pTotal,
+                    wonLeads: pWon,
+                    activeLeads: Number(p.active_leads || 0),
+                    conversionRate: (pTotal > 0 ? ((pWon / pTotal) * 100).toFixed(1) : 0) + '%',
+                    avgTimeToClose: Math.round(Number(p.avg_time_to_close || 0))
+                };
+            }),
             
-            originAnalysis: originAnalysis.map(o => ({ 
-                origin: o.origin,
-                totalLeads: Number(o.total_leads),
-                wonLeads: Number(o.won_leads),
-                conversionRate: (Number(o.total_leads) > 0 ? ((Number(o.won_leads) / Number(o.total_leads)) * 100).toFixed(1) : 0) + '%',
-            })),
+            // CORREÇÃO: Adiciona Array.isArray check para evitar crash no .map()
+            originAnalysis: (Array.isArray(originAnalysisRaw) ? originAnalysisRaw : []).map(o => { 
+                const oTotal = Number(o.total_leads || 0);
+                const oWon = Number(o.won_leads || 0);
+                return {
+                    origin: o.origin,
+                    totalLeads: oTotal,
+                    wonLeads: oWon,
+                    conversionRate: (oTotal > 0 ? ((oWon / oTotal) * 100).toFixed(1) : 0) + '%',
+                };
+            }),
 
-            lossReasons: lossReasons.map(r => ({ reason: r.reason_for_loss, count: Number(r.count) })) 
+            // CORREÇÃO: Adiciona Array.isArray check para evitar crash no .map()
+            lossReasons: (Array.isArray(lossReasonsRaw) ? lossReasonsRaw : []).map(r => ({ reason: r.reason_for_loss, count: Number(r.count || 0) })) 
         };
 
         console.log(`[ReportController] getDashboardData returning dashboard with ${totalLeads} leads`);
         return res.json(dashboard);
 
     } catch (error) {
-        console.error('Erro CRÍTICO ao buscar dados do dashboard (getDashboardData):', error);
+        console.error('Erro CRÍTICO ao buscar dados do dashboard (getDashboardData):', error.message || error);
         return res.status(500).json({ error: 'Erro interno do servidor ao processar o dashboard.' });
     }
 };
