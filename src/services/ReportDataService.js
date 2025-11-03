@@ -2,7 +2,7 @@
 
 const { pool } = require('../../config/db');
 // Assumindo que você tem um utilitário para formatar datas e construir WHERE clauses
-const SqlUtils = require('../utils/SqlUtils'); 
+const SqlUtils = require('../../utils/SqlUtils'); 
 
 class ReportDataService {
     
