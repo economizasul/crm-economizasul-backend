@@ -1,60 +1,69 @@
-// controllers/ReportController.js
+// controllers/ReportController.js (ATUALIZADO)
 
-const ReportDataService = require('../services/ReportDataService');
-// Assumindo que você tem um User Service ou Model para verificar admin
-const UserService = { 
-    isAdmin: (userId) => true // SIMULANDO: Substitua pela sua lógica real
-};
+// O caminho foi corrigido na etapa 1.
+const ReportDataService = require('../src/services/ReportDataService');
+const CsvGeneratorService = require('../src/services/CsvGeneratorService');
+const PdfGeneratorService = require('../src/services/PdfGeneratorService');
+// ... (UserService e outras dependências)
 
 class ReportController {
-    
+    // ... (getDashboardData e getAnalyticReport permanecem os mesmos)
+
     /**
-     * Retorna os dados para o dashboard de relatórios (gráficos e tabelas).
+     * Exporta os Leads ativos (filtrados) para um arquivo CSV.
      */
-    async getDashboardData(req, res) {
+    async exportToCsv(req, res) {
         try {
-            // Obter filtros da Query String: /api/reports/data?vendorId=X&periodStart=Y...
             const filters = req.query;
+            const userId = req.user.id;
+            const isAdmin = UserService.isAdmin(userId);
             
-            // Dados de permissão do usuário logado (assumindo que o authMiddleware popula req.user)
+            // 1. Coleta os leads brutos (usando o método auxiliar do ReportDataService)
+            const conditions = ReportDataService._buildBaseConditions(filters, userId, isAdmin);
+            const leadsToExport = await ReportDataService._getAllLeads(conditions); // Coleta leads
+            
+            // 2. Gera o CSV
+            const csvString = await CsvGeneratorService.exportLeads(leadsToExport);
+            
+            // 3. Responde com o arquivo
+            res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+            res.setHeader('Content-Disposition', 'attachment; filename="relatorio_leads.csv"');
+            return res.send(csvString);
+
+        } catch (error) {
+            console.error('Erro ao exportar CSV:', error);
+            return res.status(500).json({ success: false, message: 'Erro interno na geração do CSV.' });
+        }
+    }
+
+    /**
+     * Gera e retorna um relatório em PDF.
+     */
+    async exportToPdf(req, res) {
+        try {
+            const filters = req.query;
             const userId = req.user.id;
             const isAdmin = UserService.isAdmin(userId);
 
-            const data = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
-
-            return res.json({ success: true, data });
-        } catch (error) {
-            console.error('Erro ao buscar dados do dashboard:', error);
-            return res.status(500).json({ success: false, message: 'Erro interno ao processar relatórios.' });
-        }
-    }
-
-    /**
-     * Retorna os dados para o relatório analítico de atendimento de um lead.
-     */
-    async getAnalyticReport(req, res) {
-        try {
-            const { leadId } = req.query;
-            if (!leadId) {
-                return res.status(400).json({ success: false, message: 'ID do Lead é obrigatório.' });
-            }
-
-            const report = await ReportDataService.getAnalyticNotes(leadId);
+            // 1. Coleta os dados agregados para o relatório
+            const reportData = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
             
-            if (!report) {
-                 return res.status(404).json({ success: false, message: 'Lead não encontrado.' });
-            }
+            // 2. Constrói o HTML de impressão
+            const htmlContent = PdfGeneratorService.buildReportHtml(reportData, filters);
+            
+            // 3. Gera o PDF
+            const pdfBuffer = await PdfGeneratorService.generatePdf(htmlContent);
 
-            // TODO: Adicionar checagem de ownerId aqui, se o usuário não for Admin.
-
-            return res.json({ success: true, data: report });
+            // 4. Responde com o arquivo PDF
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'attachment; filename="relatorio_gerencial.pdf"');
+            return res.send(pdfBuffer);
+            
         } catch (error) {
-             console.error('Erro ao buscar relatório analítico:', error);
-             return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados.' });
+            console.error('Erro ao exportar PDF:', error);
+            return res.status(500).json({ success: false, message: 'Erro interno na geração do PDF.' });
         }
     }
-
-    // Os métodos para exportar PDF e CSV serão adicionados posteriormente.
 }
 
 module.exports = new ReportController();
