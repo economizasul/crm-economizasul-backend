@@ -1,43 +1,30 @@
 // routes/reports.js
+
 const express = require('express');
 const router = express.Router();
+const reportController = require('../controllers/ReportController');
+const authMiddleware = require('../middleware/authMiddleware'); // Seu middleware de JWT
 
-const ReportController = require('../controllers/ReportController');
-const { protect } = require('../middleware/authMiddleware');
+// Aplica o middleware de autenticação a todas as rotas de relatórios
+router.use(authMiddleware);
 
-// Rota para dashboard principal (metrics)
-router.get('/dashboard-data', protect, async (req, res, next) => {
-  console.log(`[reports] incoming GET /dashboard-data from user=${req.user?.id || 'anon'} query=${JSON.stringify(req.query)}`);
-  try {
-    return await ReportController.getDashboardData(req, res, next);
-  } catch (err) {
-    console.error('[reports] error in /dashboard-data route handler:', err);
-    return res.status(500).json({ error: 'Erro interno ao processar /dashboard-data' });
-  }
-});
+/**
+ * @route GET /api/reports/data
+ * @description Retorna todos os dados para alimentar o dashboard (gráficos, tabelas).
+ * @access Private (Auth Required)
+ */
+router.get('/data', reportController.getDashboardData);
 
-// Rota para export (csv / pdf)
-router.get('/export', protect, async (req, res, next) => {
-  console.log(`[reports] incoming GET /export from user=${req.user?.id || 'anon'} query=${JSON.stringify(req.query)}`);
-  try {
-    return await ReportController.exportReports(req, res, next);
-  } catch (err) {
-    console.error('[reports] error in /export route handler:', err);
-    return res.status(500).json({ error: 'Erro interno ao processar /export' });
-  }
-});
+/**
+ * @route GET /api/reports/analytic
+ * @description Retorna o relatório detalhado de atendimento para um Lead.
+ * @access Private (Auth Required)
+ */
+router.get('/analytic', reportController.getAnalyticReport);
 
-// Rota para obter lista de vendedores (sellers)
-router.get('/sellers', protect, async (req, res) => {
-  console.log(`[reports] incoming GET /sellers from user=${req.user?.id || 'anon'}`);
-  try {
-    const { pool } = require('../config/db');
-    const result = await pool.query(`SELECT id, name FROM users WHERE is_active = true ORDER BY name`);
-    return res.json(result.rows);
-  } catch (error) {
-    console.error('Erro ao buscar vendedores (sellers):', error);
-    return res.status(500).json({ error: 'Erro interno ao buscar vendedores.' });
-  }
-});
+
+// Futuramente:
+// router.get('/export/pdf', reportController.exportToPdf);
+// router.get('/export/csv', reportController.exportToCsv);
 
 module.exports = router;
