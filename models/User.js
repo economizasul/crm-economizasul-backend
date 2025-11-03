@@ -6,6 +6,30 @@ const bcrypt = require('bcrypt'); // Importa o bcrypt para criptografia de senha
 const SALT_ROUNDS = 10; 
 
 class User {
+    // 0. NOVO MÉTODO: Cria a tabela de Usuários se não existir (CRÍTICO)
+    static async createTable() {
+        const query = `
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                name VARCHAR(255) NOT NULL,
+                email VARCHAR(255) UNIQUE NOT NULL,
+                password VARCHAR(255) NOT NULL,
+                role VARCHAR(50) DEFAULT 'sales', -- 'admin' ou 'sales'
+                created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
+            );
+            -- Índice para busca rápida de e-mail (usado no login)
+            CREATE UNIQUE INDEX IF NOT EXISTS users_email_idx ON users (email);
+        `;
+        try {
+            await pool.query(query);
+            console.log("Tabela 'users' verificada/criada com sucesso.");
+        } catch (error) {
+            console.error("Erro ao criar tabela 'users':", error);
+            throw error;
+        }
+    }
+
+
     // 1. Método para Criar um Novo Usuário (Vendedor)
     static async create({ name, email, password, role = 'sales' }) {
         try {

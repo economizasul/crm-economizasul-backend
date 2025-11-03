@@ -49,7 +49,7 @@ app.use(express.json());
 // ===========================
 // Modelos (necessários para a inicialização)
 const Lead = require("./models/Lead");
-const User = require("./models/User"); // Presumindo que você tem um modelo User
+const User = require("./models/User"); 
 
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes"); 
@@ -96,9 +96,9 @@ app.use((req, res, next) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-// =========================
+// ===========================
 // Health Check
-// =========================
+// ===========================
 app.get("/api/v1/health", (req, res) => {
     res.json({
         message: "🚀 API CRM-EconomizaSul funcionando!",
@@ -111,7 +111,7 @@ const PORT = process.env.PORT || 5000;
 
 
 // ==================================================
-// FUNÇÃO DE INICIALIZAÇÃO ROBUSTA (Correção de Deploy)
+// FUNÇÃO DE INICIALIZAÇÃO ROBUSTA (AGORA COMPLETA)
 // ==================================================
 async function initializeAndStartServer() {
     try {
@@ -121,12 +121,11 @@ async function initializeAndStartServer() {
         await pool.query('SELECT 1');
         console.log("🔗 Conexão com o PostgreSQL OK.");
         
-        // 2. Criação/Verificação das tabelas (CRÍTICO)
-        await User.createTable();
+        // 2. Criação/Verificação das tabelas (USERS DEVE SER CRIADA ANTES DE LEADS)
+        await User.createTable(); // <-- RE-HABILITADO
         await Lead.createTable();
-        // Adicione outras tabelas aqui (Ex: await Client.createTable();)
         
-        console.log("✅ Inicialização do Banco de Dados concluída.");
+        console.log("✅ Inicialização do Banco de Dados concluída (tabelas 'users' e 'leads' verificadas).");
 
         // 3. Inicia servidor Express
         app.listen(PORT, () => {
