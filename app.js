@@ -8,7 +8,8 @@ const express = require("express");
 const cors = require("cors");
 const dotenv = require("dotenv");
 const path = require("path");
-const history = require('connect-history-api-fallback'); // Para SPA React
+const history = require('connect-history-api-fallback'); 
+const { pool } = require('./config/db'); // Importa o pool para testar a conexão
 
 // Carrega variáveis de ambiente (.env)
 dotenv.config();
@@ -20,10 +21,10 @@ const app = express();
 // Configuração de CORS
 // ===========================
 const allowedOrigins = [
-    "https://crm-frontend-static.onrender.com", // 🔹 Novo Static Site
-    "https://crm-frontend-rbza.onrender.com",   // Antigo (opcional)
-    "https://crm-front-renderer.onrender.com",  // Antigo (opcional)
-    "http://localhost:5173"                     // Desenvolvimento local
+    "https://crm-frontend-static.onrender.com", 
+    "https://crm-frontend-rbza.onrender.com",  
+    "https://crm-front-renderer.onrender.com",  
+    "http://localhost:5173"                    
 ];
 
 app.use(
@@ -44,8 +45,12 @@ app.use(
 app.use(express.json());
 
 // ===========================
-// Importação de Rotas
+// Importação de Rotas & Modelos
 // ===========================
+// Modelos (necessários para a inicialização)
+const Lead = require("./models/Lead");
+const User = require("./models/User"); // Presumindo que você tem um modelo User
+
 const authRoutes = require("./routes/authRoutes");
 const userRoutes = require("./routes/userRoutes"); 
 const leadRoutes = require("./routes/leadRoutes");
@@ -71,7 +76,6 @@ app.use('/api/v1/configuracoes', configuracoesRoutes);
 const frontendPath = path.join(__dirname, 'dist'); 
 
 // Middleware History Fallback para React Router
-// 🚨 Importante: garante que rotas /api não sejam reescritas
 app.use(history({
     rewrites: [
         {
@@ -84,13 +88,11 @@ app.use(history({
 // Serve arquivos estáticos do build
 app.use(express.static(frontendPath));
 
-// SPA fallback final (corrigido para não quebrar PathError)
+// SPA fallback final
 app.use((req, res, next) => {
     if (req.path.startsWith('/api')) {
-        // Se for rota de API, deixa passar para os handlers de API
         return next();
     }
-    // Qualquer outra rota não encontrada: retorna index.html
     res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
@@ -107,9 +109,40 @@ app.get("/api/v1/health", (req, res) => {
 // Porta
 const PORT = process.env.PORT || 5000;
 
-// Inicia servidor
-app.listen(PORT, () => {
-    console.log(`✅ Servidor rodando na porta ${PORT}`);
-});
+
+// ==================================================
+// FUNÇÃO DE INICIALIZAÇÃO ROBUSTA (Correção de Deploy)
+// ==================================================
+async function initializeAndStartServer() {
+    try {
+        console.log("Iniciando a inicialização do servidor...");
+        
+        // 1. Conexão ao DB (apenas um teste)
+        await pool.query('SELECT 1');
+        console.log("🔗 Conexão com o PostgreSQL OK.");
+        
+        // 2. Criação/Verificação das tabelas (CRÍTICO)
+        await User.createTable();
+        await Lead.createTable();
+        // Adicione outras tabelas aqui (Ex: await Client.createTable();)
+        
+        console.log("✅ Inicialização do Banco de Dados concluída.");
+
+        // 3. Inicia servidor Express
+        app.listen(PORT, () => {
+            console.log(`✅ Servidor rodando na porta ${PORT}`);
+        });
+
+    } catch (error) {
+        console.error("❌ ERRO CRÍTICO NA INICIALIZAÇÃO DO SERVIDOR/DB:");
+        console.error(error);
+        
+        // Sair do processo se a inicialização falhar (Render vai reportar a falha)
+        process.exit(1);
+    }
+}
+
+// Inicia o processo
+initializeAndStartServer();
 
 module.exports = app;
