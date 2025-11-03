@@ -1,79 +1,67 @@
 // controllers/ReportController.js
 
 // O caminho correto deve subir um nível (para a raiz) e descer para 'src/services'
-// Dependendo da sua estrutura exata, se 'src' estiver na raiz, este é o caminho:
 const ReportDataService = require('../src/services/ReportDataService');
 
-// Dependências de Exportação (Certifique-se de que estão instaladas via npm)
+// Dependências de Exportação
 const pdfKit = require('pdfkit');    
 const ExcelJS = require('exceljs'); 
-// Nota: O método .table do pdfKit pode precisar de um módulo auxiliar em produção. 
-// O código abaixo é ilustrativo do fluxo.
 
 class ReportController {
     
-    /**
-     * @route GET /api/reports/data
-     * Retorna todas as métricas agregadas do dashboard com base nos filtros.
-     */
+    constructor() {
+        // Conecta o 'this' de todos os métodos que serão usados como handlers de rota
+        this.getReportData = this.getReportData.bind(this);
+        this.getAnalyticNotes = this.getAnalyticNotes.bind(this);
+        this.exportCsv = this.exportCsv.bind(this);
+        this.exportPdf = this.exportPdf.bind(this);
+    }
+    
+    // =============================================================
+    // MÉTODOS DE DADOS (Não alterados, apenas adicionados ao constructor)
+    // =============================================================
+    
     async getReportData(req, res) {
+        // ... (Seu código existente aqui)
         try {
-            const { filters, userId, isAdmin } = req.body.context; // Assumindo que o contexto é injetado no corpo ou é um middleware
-            
+            const { filters, userId, isAdmin } = req.body.context;
             const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
-            
-            return res.status(200).json({ 
-                success: true, 
-                data: metrics 
-            });
-
+            return res.status(200).json({ success: true, data: metrics });
         } catch (error) {
             console.error('Erro ao buscar dados do dashboard:', error);
             return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados do dashboard.' });
         }
     }
 
-    /**
-     * @route GET /api/reports/analytic
-     * Retorna os dados analíticos e anotações para um lead específico.
-     */
     async getAnalyticNotes(req, res) {
+        // ... (Seu código existente aqui)
         try {
             const { leadId } = req.query; 
-
-            if (!leadId) {
-                return res.status(400).json({ success: false, message: 'ID do Lead é obrigatório.' });
-            }
-
+            if (!leadId) return res.status(400).json({ success: false, message: 'ID do Lead é obrigatório.' });
             const data = await ReportDataService.getAnalyticNotes(leadId);
-
-            if (!data) {
-                return res.status(404).json({ success: false, message: 'Lead não encontrado.' });
-            }
-
+            if (!data) return res.status(404).json({ success: false, message: 'Lead não encontrado.' });
             return res.status(200).json({ success: true, data });
-
         } catch (error) {
             console.error('Erro ao buscar dados analíticos:', error);
             return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados analíticos.' });
         }
     }
-
-    /**
-     * @route GET /api/reports/export/csv
-     * Exporta os dados brutos de leads para CSV (usando req.query para filtros em GET).
-     */
+    
+    // =============================================================
+    // MÉTODOS DE EXPORTAÇÃO (Não alterados, apenas adicionados ao constructor)
+    // =============================================================
+    
     async exportCsv(req, res) {
+        // ... (Seu código existente aqui)
         try {
-            // Usa req.query para filtros, e assume que userId/isAdmin virão de middleware
             const filters = req.query;
-            const userId = req.userId; // Middleware deve injetar isso
-            const isAdmin = req.isAdmin; // Middleware deve injetar isso
+            const userId = req.userId; 
+            const isAdmin = req.isAdmin; 
 
             const allLeadsData = await ReportDataService.getAllLeadsForExport(filters, userId, isAdmin);
+            // ... (Restante da lógica CSV)
 
             if (allLeadsData.length === 0) {
-                // Não retorna 404, mas sim um CSV vazio ou com mensagem de erro
                 return res.status(200).send('ID,Nome,Estágio,Valor,Origem,Vendedor,Data Criação\n');
             }
 
@@ -104,11 +92,8 @@ class ReportController {
         }
     }
 
-    /**
-     * @route GET /api/reports/export/pdf
-     * Exporta o resumo das métricas (Productivity e Forecast) para PDF (usando req.query para filtros em GET).
-     */
     async exportPdf(req, res) {
+        // ... (Seu código existente aqui)
         try {
             const filters = req.query;
             const userId = req.userId; 
@@ -145,7 +130,7 @@ class ReportController {
                 ['Tempo Médio de Fechamento', `${prod.avgClosingTimeDays.toFixed(1)} dias`],
             ];
 
-            // Implementação simplificada da tabela em PDFKit (pode precisar de um módulo wrapper)
+            // Implementação simplificada da tabela em PDFKit
             let yPosition = doc.y;
             doc.font('Helvetica-Bold');
             doc.text(tableData[0][0], 50, yPosition, { width: 250 });
@@ -159,7 +144,6 @@ class ReportController {
                 yPosition += 15;
             }
 
-            // -- Fim do Conteúdo --
             doc.end();
 
         } catch (error) {
@@ -169,4 +153,5 @@ class ReportController {
     }
 }
 
+// Exporta a INSTÂNCIA do Controller
 module.exports = new ReportController();
