@@ -96,9 +96,9 @@ app.use((req, res, next) => {
     res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
-// ===========================
+// =========================
 // Health Check
-// ===========================
+// =========================
 app.get("/api/v1/health", (req, res) => {
     res.json({
         message: "🚀 API CRM-EconomizaSul funcionando!",

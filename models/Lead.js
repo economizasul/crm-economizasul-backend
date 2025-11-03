@@ -1,9 +1,9 @@
-// models/Lead.js - CÓDIGO FINAL CORRIGIDO PARA EVITAR ERRO DE "undefined" no owner_id
+// models/Lead.js
 
 const { pool } = require('../config/db');
 
 class Lead {
-    // 1. Cria a tabela de Leads se não existir (Mantida)
+    // 1. Cria a tabela de Leads se não existir
     static async createTable() {
         const query = `
             CREATE TABLE IF NOT EXISTS leads (
@@ -40,12 +40,15 @@ class Lead {
         }
     }
 
-    // 2. Cria um novo Lead (Mantida)
+    // 2. Cria um novo Lead (APLICADA CORREÇÃO DE ownerId)
     static async create({ 
         name, phone, document, address, status, origin, ownerId, 
         email, avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng,
         reasonForLoss
     }) {
+        // 💡 CORREÇÃO: Garante que ownerId seja NULL se não for um INT válido (para criação).
+        const safeOwnerId = ownerId === undefined || ownerId === null || isNaN(parseInt(ownerId)) ? null : parseInt(ownerId);
+
         const query = `
             INSERT INTO leads (
                 name, phone, document, address, status, origin, owner_id, 
@@ -57,7 +60,7 @@ class Lead {
         `;
         
         const values = [
-            name, phone, document, address, status, origin, ownerId, 
+            name, phone, document, address, status, origin, safeOwnerId, // USANDO safeOwnerId
             email, uc, 
             avgConsumption ? parseFloat(avgConsumption) : null,
             estimatedSavings ? parseFloat(estimatedSavings) : null,
@@ -74,11 +77,10 @@ class Lead {
         }
     }
     
-    // 3. Busca Todos os Leads (CRÍTICO: Função que alimenta o Kanban e deve usar LEFT JOIN e filtros - Mantida)
+    // 3. Busca Todos os Leads (Mantida)
     static async findAll({ userId, role, search, status, origin }) {
         const isAdmin = role === 'admin';
         
-        // CORREÇÃO CRÍTICA: Inclui u.name e usa LEFT JOIN
         let query = `
             SELECT 
                 l.*,
@@ -90,14 +92,12 @@ class Lead {
         const values = [];
         let valueIndex = 1;
 
-        // Regra de segurança/visualização: Se NÃO for Admin, filtre por owner_id
         if (!isAdmin) {
             query += ` AND l.owner_id = $${valueIndex}`;
             values.push(userId);
             valueIndex++;
         }
         
-        // Filtros opcionais
         if (search) {
             query += ` AND (l.name ILIKE $${valueIndex} OR l.email ILIKE $${valueIndex} OR l.phone ILIKE $${valueIndex})`;
             values.push(`%${search}%`);
@@ -114,10 +114,9 @@ class Lead {
             valueIndex++;
         }
 
-        query += ` ORDER BY l.updated_at DESC`; // Ordem de visualização do Kanban
+        query += ` ORDER BY l.updated_at DESC`;
 
         try {
-            // AJUDA DE DEBUG: Mostra a query executada no console do servidor
             console.log('SQL Executado (Lead.findAll):', query, values); 
             const result = await pool.query(query, values);
             return result.rows;
@@ -129,7 +128,6 @@ class Lead {
     
     // 4. Busca Lead por ID (Mantida)
     static async findById(id) {
-        // Incluir o owner_name também aqui é uma boa prática
         const query = `
             SELECT 
                 l.*,
@@ -147,14 +145,18 @@ class Lead {
         }
     }
     
-    // 5. Atualiza Lead (Completo - CORRIGIDA)
+    // 5. Atualiza Lead (CORREÇÃO CRÍTICA APLICADA)
     static async update(id, { 
         name, phone, document, address, status, origin, 
-        ownerId, 
+        ownerId, // <--- ONDE O ERRO OCORRIA
         email, avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng,
         reasonForLoss, 
         dateWon 
     }) {
+        // 💡 CORREÇÃO CRÍTICA: Garante que ownerId é um INT ou NULL.
+        // Isso resolve o erro "invalid input syntax for type integer: "undefined""
+        const safeOwnerId = ownerId === undefined || ownerId === null || isNaN(parseInt(ownerId)) ? null : parseInt(ownerId);
+        
         let updateFields = [
             `name = $1`, `phone = $2`, `document = $3`, `address = $4`, 
             `status = $5`, `origin = $6`, `owner_id = $7`, `updated_at = CURRENT_TIMESTAMP`, 
@@ -162,22 +164,18 @@ class Lead {
             `notes = $12`, `qsa = $13`, `lat = $14`, `lng = $15`, 
             `reason_for_loss = $16`
         ];
-        
-        // CORREÇÃO CRÍTICA: Tratar ownerId para evitar erro de tipo "undefined" ou "null" no INTEGER
-        const safeOwnerId = ownerId === undefined || ownerId === null || isNaN(parseInt(ownerId)) ? null : parseInt(ownerId);
-
         const values = [
             name, phone, document, address, status, origin,
-            safeOwnerId, // <-- CORRIGIDO
-            email,
-            uc, 
+            safeOwnerId, // USANDO O VALOR SEGURO AQUI!          
+            email,            
+            uc,               
             avgConsumption ? parseFloat(avgConsumption) : null, 
             estimatedSavings ? parseFloat(estimatedSavings) : null, 
-            notes,
-            qsa, 
-            lat, 
-            lng, 
-            reasonForLoss  // $16
+            notes,            
+            qsa,              
+            lat,              
+            lng,              
+            reasonForLoss     // $16
         ];
 
         // Adiciona date_won se o status for 'Ganho'
@@ -235,7 +233,7 @@ class Lead {
         }
     }
     
-    // 7. Exclui Lead (Presumido - Mantida)
+    // 7. Exclui Lead (Mantida)
     static async delete(id) { 
         const query = 'DELETE FROM leads WHERE id = $1 RETURNING id';
         try {
@@ -251,9 +249,8 @@ class Lead {
     // NOVAS FUNÇÕES PARA RELATÓRIOS (Mantidas)
     // =============================================================
     
-    // 8. Busca dados para o Dashboard de Métricas (Mantida)
+    // 8. Busca dados para o Dashboard de Métricas
     static async getDashboardMetrics(ownerId, isAdmin, startDate, endDate) {
-        // Lógica de filtragem de Leads por período e proprietário (se não for Admin)
         let baseCondition = `1=1`;
         const values = [];
         let valueIndex = 1;
@@ -264,20 +261,15 @@ class Lead {
             valueIndex += 2;
         }
 
-        // Se estiver filtrando por um vendedor específico (ownerId) E/OU se não for Admin
         if (ownerId || !isAdmin) {
-             // Se não for admin, ownerId é obrigatório. Se for admin, pode estar filtrando ou não.
              const filterId = ownerId || (isAdmin ? null : ownerId);
              if (filterId) {
-                 baseCondition += ` AND l.owner_id = $${valueIndex}`;
-                 values.push(filterId);
-                 valueIndex++;
-             } else if (!isAdmin && !ownerId) {
-                // Este caso não deve ocorrer se 'protect' garantir req.user
+                baseCondition += ` AND l.owner_id = $${valueIndex}`;
+                values.push(filterId);
+                valueIndex++;
              }
         }
         
-        // Esta query faz a maioria dos cálculos em UMA SÓ REQUISIÇÃO (Performance!)
         const query = `
             SELECT
                 -- 1. Novos Leads no Período
@@ -314,64 +306,62 @@ class Lead {
     
     // 9. Funil de Vendas e Performance de Vendedores (Mantida)
     static async getFunnelAndPerformance(filters) {
-         // O ReportController deve ser responsável por passar os filtros corretos aqui
-         const query = `
-             WITH LeadStatus AS (
-                 SELECT 
-                     l.status, 
-                     l.owner_id, 
-                     l.origin,
-                     l.estimated_savings AS value,
-                     EXTRACT(EPOCH FROM (l.date_won - l.created_at)) / 86400 AS time_to_close_days,
-                     l.reason_for_loss,
-                     CASE WHEN l.status = 'Ganho' THEN 1 ELSE 0 END AS is_won
-                 FROM leads l
-                 -- Implementação dos filtros é complexa e deve ser feita aqui, 
-                 -- mas vou mantê-la simples por ora, assumindo que ReportController filtra.
-             )
-             
-             -- Dados do Funil
-             SELECT 'Funnel' AS type, status, COUNT(*) AS count
-             FROM LeadStatus
-             GROUP BY status
-             
-             UNION ALL
-             
-             -- Performance por Vendedor (CORREÇÃO: LEFT JOIN para não excluir vendedores sem leads no período)
-             SELECT 
-                 'Performance' AS type, 
-                 u.name AS seller_name, 
-                 COUNT(ls.*) AS total_leads, -- Usa ls.* para contar leads APÓS filtros
-                 COALESCE(SUM(is_won), 0) AS won_leads,
-                 AVG(CASE WHEN is_won = 1 THEN time_to_close_days END) AS avg_time_to_close,
-                 COALESCE(SUM(CASE WHEN status NOT IN ('Ganho', 'Perdido') THEN 1 ELSE 0 END), 0) AS active_leads
-             FROM users u
-             LEFT JOIN LeadStatus ls ON ls.owner_id = u.id
-             GROUP BY u.name
-             
-             UNION ALL
-             
-             -- Análise de Origem (Simples)
-             SELECT 'Origin' AS type, origin, COUNT(*) AS total_leads, SUM(is_won) AS won_leads
-             FROM LeadStatus
-             GROUP BY origin
-             
-             UNION ALL
-             
-             -- Razões de Perda
-             SELECT 'LossReason' AS type, reason_for_loss, COUNT(*) AS count
-             FROM LeadStatus 
-             WHERE status = 'Perdido' AND reason_for_loss IS NOT NULL
-             GROUP BY reason_for_loss;
-         `;
+        const query = `
+            WITH LeadStatus AS (
+                SELECT 
+                    l.status, 
+                    l.owner_id, 
+                    l.origin,
+                    l.estimated_savings AS value,
+                    EXTRACT(EPOCH FROM (l.date_won - l.created_at)) / 86400 AS time_to_close_days,
+                    l.reason_for_loss,
+                    CASE WHEN l.status = 'Ganho' THEN 1 ELSE 0 END AS is_won
+                FROM leads l
+                -- Filtros do ReportController devem ser injetados aqui
+            )
+            
+            -- Dados do Funil
+            SELECT 'Funnel' AS type, status, COUNT(*) AS count
+            FROM LeadStatus
+            GROUP BY status
+            
+            UNION ALL
+            
+            -- Performance por Vendedor 
+            SELECT 
+                'Performance' AS type, 
+                u.name AS seller_name, 
+                COUNT(ls.*) AS total_leads, 
+                COALESCE(SUM(is_won), 0) AS won_leads,
+                AVG(CASE WHEN is_won = 1 THEN time_to_close_days END) AS avg_time_to_close,
+                COALESCE(SUM(CASE WHEN status NOT IN ('Ganho', 'Perdido') THEN 1 ELSE 0 END), 0) AS active_leads
+            FROM users u
+            LEFT JOIN LeadStatus ls ON ls.owner_id = u.id
+            GROUP BY u.name
+            
+            UNION ALL
+            
+            -- Análise de Origem 
+            SELECT 'Origin' AS type, origin, COUNT(*) AS total_leads, SUM(is_won) AS won_leads
+            FROM LeadStatus
+            GROUP BY origin
+            
+            UNION ALL
+            
+            -- Razões de Perda
+            SELECT 'LossReason' AS type, reason_for_loss, COUNT(*) AS count
+            FROM LeadStatus 
+            WHERE status = 'Perdido' AND reason_for_loss IS NOT NULL
+            GROUP BY reason_for_loss;
+        `;
         
-         try {
-             const result = await pool.query(query, []); // Os valores dos filtros devem ser passados aqui
-             return result.rows;
-         } catch (error) {
-             console.error("Erro ao obter funil e performance:", error);
-             throw error;
-         }
+        try {
+            const result = await pool.query(query, []); // Os valores dos filtros devem ser passados aqui
+            return result.rows;
+        } catch (error) {
+            console.error("Erro ao obter funil e performance:", error);
+            throw error;
+        }
     }
 }
 
