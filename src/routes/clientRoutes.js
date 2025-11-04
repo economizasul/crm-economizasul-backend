@@ -7,9 +7,12 @@ const router = express.Router();
 const ClientController = require('../controllers/ClientController');
 
 // Middleware
-const { protect } = require('../middleware/authMiddleware');
+const protect = require('../middleware/authMiddleware');
 
+// ------------------------------------------------------------------
 // ROTAS DE CLIENTES (CRUD) - TODAS PROTEGIDAS
+// ------------------------------------------------------------------
+
 router.get('/', protect, ClientController.getAllClients);        // Listar Clientes
 router.get('/:id', protect, ClientController.getClientById);     // Buscar por ID
 router.post('/', protect, ClientController.createClient);        // Criar Cliente
