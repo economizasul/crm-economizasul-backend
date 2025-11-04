@@ -3,17 +3,23 @@
 const express = require('express');
 const router = express.Router();
 
-// Controlador
+// ✅ Caminho correto do controller
 const ReportController = require('../controllers/ReportController');
 
-// Middleware de autenticação real
-const { protect } = require('../middleware/authMiddleware');
+// ✅ Middleware real de autenticação
+const protect = require('../middleware/authMiddleware');
 
+// ===================================
 // ROTAS DE RELATÓRIOS
+// ===================================
+
+// Dados principais do dashboard
 router.get('/data', protect, ReportController.getReportData);
+
+// Dados analíticos de leads
 router.get('/analytic', protect, ReportController.getAnalyticNotes);
 
-// ROTAS DE EXPORTAÇÃO
+// Exportações
 router.get('/export/csv', protect, ReportController.exportCsv);
 router.get('/export/pdf', protect, ReportController.exportPdf);
 
