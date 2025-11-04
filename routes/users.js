@@ -3,9 +3,11 @@
 const express = require('express');
 const router = express.Router();
 
-// O Controller está na pasta controllers/ na raiz, o caminho é '../controllers/UserController'
-const UserController = require('../controllers/UserController'); 
-// O Middleware isAuthenticated e isAdministrator estão na pasta src/middlewares
+// ⭐️ CORREÇÃO FINAL CONFIRMADA: O caminho DEVE ser ../../controllers/UserController
+// Isso sobe de 'routes' para 'src', e de 'src' para a raiz, onde está 'controllers'.
+const UserController = require('../../controllers/UserController'); 
+
+// Assumindo que seu middleware está em src/middlewares
 const isAuthenticated = require('../src/middlewares/isAuthenticated'); 
 const isAdministrator = require('../src/middlewares/isAdministrator'); 
 
