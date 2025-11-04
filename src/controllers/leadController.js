@@ -2,7 +2,7 @@
 
 const { pool } = require('../../config/db');
 const axios = require('axios');
-const Lead = require('../models/Lead'); 
+const Lead = require('../../models/Lead'); 
 
 // ===========================
 // 🛠️ Função auxiliar para formatar um lead
