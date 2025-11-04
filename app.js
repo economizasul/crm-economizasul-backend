@@ -22,9 +22,9 @@ const app = express();
 // ===========================
 const allowedOrigins = [
     "https://crm-frontend-static.onrender.com", 
-    "https://crm-frontend-rbza.onrender.com",  
-    "https://crm-front-renderer.onrender.com",  
-    "http://localhost:5173"                    
+    "https://crm-frontend-rbza.onrender.com", 
+    "https://crm-front-renderer.onrender.com", 
+    "http://localhost:5173" 
 ];
 
 app.use(
@@ -52,24 +52,24 @@ const Lead = require("./models/Lead");
 const User = require("./models/User"); 
 
 const authRoutes = require("./routes/authRoutes");
-const userRoutes = require("./routes/userRoutes"); 
+// REMOVIDA A LINHA DUPLICADA: const userRoutes = require("./routes/userRoutes");
 const leadRoutes = require("./routes/leadRoutes");
 const clientRoutes = require("./routes/clientRoutes");
 const pipelineRoutes = require("./routes/pipelineRoutes");
 const reportsRoutes = require('./routes/reports');
-const userRoutes = require('./routes/users');
+const userRoutes = require('./routes/users'); // USANDO ESTA (APONTA PARA O CRUD)
 const configuracoesRoutes = require('./routes/configuracoes');
 
 // ===========================
 // Registro de Rotas
 // ===========================
 app.use("/api/v1/auth", authRoutes);
-app.use("/api/v1/users", userRoutes); 
 app.use("/api/v1/leads", leadRoutes);
 app.use("/api/v1/clients", clientRoutes);
 app.use("/api/v1/pipeline", pipelineRoutes);
 app.use('/api/v1/reports', reportsRoutes);
-app.use('/api/v1/users', userRoutes); 
+// CONSOLIDADO: Apenas um mapeamento para as rotas de usuário
+app.use("/api/v1/users", userRoutes); 
 app.use('/api/v1/configuracoes', configuracoesRoutes);
 
 // ===========================
