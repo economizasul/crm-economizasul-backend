@@ -1,9 +1,9 @@
 // controllers/leadController.js
 console.log('LEAD CONTROLLER CARREGADO COM SUCESSO');
 
-const { pool } = require('../../config/db');
+const { pool } = require('../config/db');
 const axios = require('axios');
-const Lead = require('../../models/Lead'); 
+const Lead = require('../models/Lead'); 
 
 // ===========================
 // 🛠️ Função auxiliar para formatar um lead
@@ -37,12 +37,12 @@ const formatLeadResponse = (lead) => {
         status: lead.status, 
         origin: lead.origin,
         ownerId: lead.owner_id,
-        ownerName: lead.owner_name || 'Desconhecido', // 💡 NOVO: Nome do proprietário
+        ownerName: lead.owner_name || 'Desconhecido', // NOVO: Nome do proprietário
         
         email: lead.email || '',
         uc: lead.uc || '',
-        avgConsumption: lead.avg_consumption || null,      
-        estimatedSavings: lead.estimated_savings || null,  
+        avgConsumption: lead.avg_consumption || null,
+        estimatedSavings: lead.estimated_savings || null,
         qsa: lead.qsa || '',
         lat: lead.lat || null,
         lng: lead.lng || null,

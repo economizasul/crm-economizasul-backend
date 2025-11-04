@@ -1,7 +1,7 @@
 // controllers/PipelineController.js
 
-const Lead = require('../../models/Lead');
-const Client = require('../../models/Client');
+const Lead = require('../models/Lead');
+const Client = require('../models/Client');
 
 class PipelineController {
     // Lógica para Promover um Lead a Cliente (POST /api/pipeline/promote/:leadId)

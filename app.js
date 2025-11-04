@@ -11,18 +11,18 @@ const path = require('path');
 const history = require('connect-history-api-fallback');
 
 // Rotas (agora dentro de /src)
-const userRoutes = require('./src/routes/users');
-const authRoutes = require('./src/routes/authRoutes');
-const clientRoutes = require('./src/routes/clientRoutes');
-const reportRoutes = require('./src/routes/reports');
-const leadRoutes = require('./src/routes/leadRoutes');
-const pipelineRoutes = require('./src/routes/pipelineRoutes');
-const configRoutes = require('./src/routes/configuracoes');
+const userRoutes = require('./routes/users');
+const authRoutes = require('./routes/authRoutes');
+const clientRoutes = require('./routes/clientRoutes');
+const reportRoutes = require('./routes/reports');
+const leadRoutes = require('./routes/leadRoutes');
+const pipelineRoutes = require('./routes/pipelineRoutes');
+const configRoutes = require('./routes/configuracoes');
 
 // Modelos (para inicialização do banco)
-const Lead = require("./src/models/Lead");
-const User = require("./src/models/User");
-const pool = require("./src/db/index");
+const Lead = require("./models/Lead");
+const User = require("./models/User");
+const pool = require("./db/index");
 
 // Carrega variáveis de ambiente (.env)
 dotenv.config();

@@ -1,6 +1,6 @@
 // controllers/ClientController.js
 
-const Client = require('../../models/Client'); // <-- CORRIGIDO: Passa a subir dois níveis (../../)
+const Client = require('../models/Client'); // <-- CORRIGIDO: Passa a subir dois níveis (../../)
 
 class ClientController {
     // 1. Criar Cliente (POST /api/clients)
