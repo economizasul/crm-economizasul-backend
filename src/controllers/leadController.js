@@ -281,10 +281,10 @@ const getUsersForReassignment = async (req, res) => {
 
 
 module.exports = {
-    createLead,
-    getAllLeads,
-    getLeadById,
-    updateLead,
-    deleteLead,
-    getUsersForReassignment,
+  getAllLeads,
+  createLead,
+  getLeadById,
+  updateLead,
+  deleteLead,
+  getUsersForReassignment
 };
