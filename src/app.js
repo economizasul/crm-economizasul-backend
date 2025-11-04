@@ -4,12 +4,16 @@
 // Configuração central de servidor, CORS e rotas
 // ===============================================
 
-const express = require("express");
-const cors = require("cors");
-const dotenv = require("dotenv");
-const path = require("path");
-const history = require('connect-history-api-fallback'); 
-const { pool } = require('./config/db');
+const express = require('express');
+const dotenv = require('dotenv');
+const cors = require('cors');
+const userRoutes = require('./routes/users');
+const authRoutes = require('./routes/authRoutes');
+const clientRoutes = require('./routes/clientRoutes');
+const reportRoutes = require('./routes/reports');
+const leadRoutes = require('./routes/leadRoutes');
+const pipelineRoutes = require('./routes/pipelineRoutes');
+const configRoutes = require('./routes/configuracoes');
 
 // Carrega variáveis de ambiente (.env)
 dotenv.config();
@@ -48,8 +52,8 @@ app.use(express.json());
 // Importação de Rotas & Modelos
 // ===========================
 // Modelos (necessários para a inicialização)
-const Lead = require("./models/Lead");
-const User = require("./models/User"); 
+const Lead = require("../models/Lead");
+const User = require("../models/User"); 
 
 const authRoutes = require("./routes/authRoutes");
 // REMOVIDA A LINHA DUPLICADA: const userRoutes = require("./routes/userRoutes");
