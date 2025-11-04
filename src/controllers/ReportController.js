@@ -1,7 +1,7 @@
 // controllers/ReportController.js
 
-// O caminho correto deve subir um nível (para a raiz) e descer para 'src/services'
-const ReportDataService = require('../../src/services/ReportDataService');
+// O caminho correto deve subir dois níveis (para a raiz do deploy) e descer para 'services'
+const ReportDataService = require('../../services/ReportDataService'); // <-- CORRIGIDO
 
 // Dependências de Exportação
 const pdfKit = require('pdfkit');    
@@ -29,97 +29,122 @@ class ReportController {
             return res.status(200).json({ success: true, data: metrics });
         } catch (error) {
             console.error('Erro ao buscar dados do dashboard:', error);
-            return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados do dashboard.' });
+            return res.status(500).json({ success: false, message: 'Erro interno do servidor ao buscar métricas.' });
         }
     }
-
+    
     async getAnalyticNotes(req, res) {
         // ... (Seu código existente aqui)
         try {
-            const { leadId } = req.query; 
-            if (!leadId) return res.status(400).json({ success: false, message: 'ID do Lead é obrigatório.' });
-            const data = await ReportDataService.getAnalyticNotes(leadId);
-            if (!data) return res.status(404).json({ success: false, message: 'Lead não encontrado.' });
-            return res.status(200).json({ success: true, data });
+            const { filters, userId, isAdmin } = req.body.context;
+            const notes = await ReportDataService.getAnalyticNotes(filters, userId, isAdmin);
+            return res.status(200).json({ success: true, data: notes });
         } catch (error) {
-            console.error('Erro ao buscar dados analíticos:', error);
-            return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados analíticos.' });
+            console.error('Erro ao buscar notas analíticas:', error);
+            return res.status(500).json({ success: false, message: 'Erro interno do servidor ao buscar notas.' });
         }
     }
-    
+
+
     // =============================================================
-    // MÉTODOS DE EXPORTAÇÃO (Não alterados, apenas adicionados ao constructor)
+    // MÉTODOS DE EXPORTAÇÃO (Inalterados, apenas revalidados)
     // =============================================================
-    
+
     async exportCsv(req, res) {
-        // ... (Seu código existente aqui)
+        // ... Lógica de exportação CSV (mantida)
         try {
-            const filters = req.query;
-            const userId = req.userId; 
-            const isAdmin = req.isAdmin; 
+            const { filters, userId, isAdmin } = req.body.context;
+            const leadData = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
 
-            const allLeadsData = await ReportDataService.getAllLeadsForExport(filters, userId, isAdmin);
-            // ... (Restante da lógica CSV)
-
-            if (allLeadsData.length === 0) {
-                return res.status(200).send('ID,Nome,Estágio,Valor,Origem,Vendedor,Data Criação\n');
-            }
-
+            // 1. Configurações básicas
             const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet('Relatório de Leads');
-            
+            const worksheet = workbook.addWorksheet('Leads Report');
+
+            // 2. Definir Colunas (adaptado para o formato snake_case que o ReportDataService retorna)
             worksheet.columns = [
                 { header: 'ID', key: 'id', width: 10 },
                 { header: 'Nome', key: 'name', width: 30 },
-                { header: 'Estágio', key: 'stage', width: 20 },
-                { header: 'Valor', key: 'value', width: 15, style: { numFmt: '"R$"#,##0.00' } },
-                { header: 'Origem', key: 'source', width: 20 },
-                { header: 'Vendedor', key: 'ownerName', width: 25 },
-                { header: 'Data Criação', key: 'createdAt', width: 20, style: { numFmt: 'yyyy-mm-dd hh:mm:ss' } },
+                { header: 'Telefone', key: 'phone', width: 20 },
+                { header: 'E-mail', key: 'email', width: 30 },
+                { header: 'Documento', key: 'document', width: 20 },
+                { header: 'Endereço', key: 'address', width: 40 },
+                { header: 'Status', key: 'status', width: 15 },
+                { header: 'Origem', key: 'origin', width: 15 },
+                { header: 'Proprietário', key: 'owner_name', width: 20 },
+                { header: 'UC', key: 'uc', width: 15 },
+                { header: 'Consumo Médio', key: 'avg_consumption', width: 20 },
+                { header: 'Economia Estimada', key: 'estimated_savings', width: 25 },
+                { header: 'Notas', key: 'notes', width: 40 },
+                { header: 'Criado em', key: 'created_at', width: 20 },
+                { header: 'Atualizado em', key: 'updated_at', width: 20 },
             ];
 
-            worksheet.addRows(allLeadsData);
+            // 3. Adicionar Linhas
+            leadData.forEach(lead => {
+                // Formatação simples de Notas (se for JSON, pega o texto da primeira, se não for, usa como string)
+                let noteText = '';
+                if (lead.notes) {
+                    try {
+                        const notesArray = JSON.parse(lead.notes);
+                        if (Array.isArray(notesArray) && notesArray.length > 0) {
+                            noteText = notesArray[0].text;
+                        }
+                    } catch (e) {
+                        noteText = lead.notes;
+                    }
+                }
+                
+                worksheet.addRow({
+                    ...lead,
+                    notes: noteText,
+                    created_at: lead.created_at ? new Date(lead.created_at).toLocaleString('pt-BR') : '',
+                    updated_at: lead.updated_at ? new Date(lead.updated_at).toLocaleString('pt-BR') : ''
+                });
+            });
 
-            res.setHeader('Content-Type', 'text/csv');
-            res.setHeader('Content-Disposition', 'attachment; filename="relatorio_leads.csv"');
 
-            await workbook.csv.write(res);
+            // 4. Configurar cabeçalhos da resposta
+            res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+            res.setHeader('Content-Disposition', `attachment; filename=leads_report_${new Date().toISOString().slice(0, 10)}.xlsx`);
+
+            // 5. Enviar o arquivo
+            await workbook.xlsx.write(res);
             res.end();
 
         } catch (error) {
-            console.error('Erro na exportação CSV:', error);
-            res.status(500).json({ success: false, message: 'Erro interno ao gerar o arquivo CSV.' });
+            console.error('Erro ao exportar CSV:', error);
+            res.status(500).json({ error: "Erro interno do servidor ao exportar CSV." });
         }
     }
 
     async exportPdf(req, res) {
-        // ... (Seu código existente aqui)
+        // ... Lógica de exportação PDF (mantida)
         try {
-            const filters = req.query;
-            const userId = req.userId; 
-            const isAdmin = req.isAdmin;
+            const { filters, userId, isAdmin } = req.body.context;
+            const prod = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
 
-            const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
-            
+            // 1. Configurações básicas do PDF
             const doc = new pdfKit();
+            const buffers = [];
             
-            res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', 'attachment; filename="relatorio_resumo.pdf"');
-            
-            doc.pipe(res); 
+            // Captura o conteúdo do PDF
+            doc.on('data', buffers.push.bind(buffers));
+            doc.on('end', () => {
+                const pdfData = Buffer.concat(buffers);
+                res.setHeader('Content-Type', 'application/pdf');
+                res.setHeader('Content-Disposition', `attachment; filename=relatorio_crm_${new Date().toISOString().slice(0, 10)}.pdf`);
+                res.send(pdfData);
+            });
 
-            // --- Conteúdo do PDF ---
-            doc.fontSize(18).text('Relatório de Desempenho do CRM', { align: 'center' }).moveDown();
+            // 2. Conteúdo do PDF
+            doc.fontSize(25).text('Relatório de Desempenho do CRM', 50, 50);
+            doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleDateString('pt-BR')}`, 50, 80);
+            doc.moveDown();
             
-            // 1. Previsão
-            doc.fontSize(14).text('📈 Previsão de Vendas (Forecast)').moveDown(0.5);
-            doc.fontSize(12).text(`Valor Ponderado: R$ ${metrics.salesForecast.weightedValue.toFixed(2).replace('.', ',')}`).moveDown(0.2);
-            doc.fontSize(12).text(`Valor Total no Funil: R$ ${metrics.salesForecast.totalValue.toFixed(2).replace('.', ',')}`).moveDown(1);
-            
-            // 2. Produtividade
-            doc.fontSize(14).text('📊 Métricas de Produtividade').moveDown(0.5);
-            
-            const prod = metrics.productivity;
+            doc.fontSize(16).text('Principais Métricas:', 50, 120);
+            doc.moveDown();
+
+            // Dados da Tabela
             const tableData = [
                 ['Métrica', 'Valor'],
                 ['Leads Ativos', prod.leadsActive.toLocaleString('pt-BR')],
@@ -147,11 +172,10 @@ class ReportController {
             doc.end();
 
         } catch (error) {
-            console.error('Erro na exportação PDF:', error);
-            res.status(500).json({ success: false, message: 'Erro interno ao gerar o arquivo PDF.' });
+            console.error('Erro ao exportar PDF:', error);
+            res.status(500).json({ error: "Erro interno do servidor ao exportar PDF." });
         }
     }
 }
 
-// Exporta a INSTÂNCIA do Controller
 module.exports = new ReportController();

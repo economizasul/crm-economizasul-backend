@@ -1,6 +1,6 @@
 // controllers/ClientController.js
 
-const Client = require('../../models/Client'); 
+const Client = require('../../models/Client'); // <-- CORRIGIDO: Passa a subir dois níveis (../../)
 
 class ClientController {
     // 1. Criar Cliente (POST /api/clients)
@@ -39,12 +39,14 @@ class ClientController {
     // 3. Buscar Cliente por ID (GET /api/clients/:id)
     static async getClientById(req, res) {
         const { id } = req.params;
+
         try {
             const client = await Client.findById(id);
-
+            
             if (!client) {
                 return res.status(404).json({ error: "Cliente não encontrado." });
             }
+
             res.status(200).json(client);
         } catch (error) {
             console.error('Erro ao buscar cliente por ID:', error);
