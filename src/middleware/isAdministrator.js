@@ -2,10 +2,9 @@
 
 /**
  * Middleware para verificar se o usuário autenticado é um administrador.
- * Assume que o middleware 'authMiddleware' já executou e adicionou req.user.
  */
 const isAdministrator = (req, res, next) => {
-  if (req.user && req.user.role === 'admin') {
+  if (req.user && req.user.role === 'Admin') {
     return next();
   }
 
