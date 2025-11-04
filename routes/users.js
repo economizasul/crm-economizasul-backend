@@ -5,8 +5,8 @@ const router = express.Router();
 
 const UserController = require('../controllers/userController'); 
 
-const isAuthenticated = require('../middlewares/authMiddleware'); // O nome do seu arquivo é authMiddleware.js ou isAuthenticated.js? Usando o nome mais provável
-const isAdministrator = require('../middlewares/isAdministrator'); 
+const isAuthenticated = require('../../middlewares/authMiddleware'); 
+const isAdministrator = require('../../middlewares/isAdministrator');
 
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
 
