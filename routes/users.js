@@ -2,10 +2,12 @@
 
 const express = require('express');
 const router = express.Router();
+const path = require('path'); // Novo import!
 
-// ⭐️ CORREÇÃO FINAL CONFIRMADA: O caminho DEVE ser ../../controllers/UserController
-// Isso sobe de 'routes' para 'src', e de 'src' para a raiz, onde está 'controllers'.
-const UserController = require('../../controllers/UserController'); 
+// ⭐️ CORREÇÃO FINAL: Usamos 'path.join' para construir o caminho absoluto.
+// dirname é o diretório do arquivo atual (routes), então subimos duas pastas 
+// para chegar na raiz e encontrar a pasta 'controllers'.
+const UserController = require(path.join(__dirname, '..', '..', 'controllers', 'UserController')); 
 
 // Assumindo que seu middleware está em src/middlewares
 const isAuthenticated = require('../src/middlewares/isAuthenticated'); 
