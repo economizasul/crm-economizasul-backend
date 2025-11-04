@@ -2,16 +2,14 @@
 
 const express = require('express');
 const router = express.Router();
-const path = require('path'); // Novo import!
 
-// ⭐️ CORREÇÃO FINAL: Usamos 'path.join' para construir o caminho absoluto.
-// dirname é o diretório do arquivo atual (routes), então subimos duas pastas 
-// para chegar na raiz e encontrar a pasta 'controllers'.
-const UserController = require(path.join(__dirname, '..', '..', 'controllers', 'UserController')); 
+// Removendo o 'path' e voltando para a importação relativa simples.
+// ⭐️ ASSUMIMOS QUE TANTO 'routes' quanto 'controllers' ESTÃO DENTRO DE 'src' no servidor.
+const UserController = require('../controllers/UserController'); 
 
 // Assumindo que seu middleware está em src/middlewares
-const isAuthenticated = require('../src/middlewares/isAuthenticated'); 
-const isAdministrator = require('../src/middlewares/isAdministrator'); 
+const isAuthenticated = require('../middlewares/isAuthenticated'); 
+const isAdministrator = require('../middlewares/isAdministrator'); 
 
 // ===================================
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
