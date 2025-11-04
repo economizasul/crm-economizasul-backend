@@ -4,11 +4,11 @@ const express = require('express');
 const router = express.Router();
 
 // ⭐️ CORREÇÃO: Usa '../src/controllers/' para lidar com a estrutura inconsistente do Render
-const UserController = require('../src/controllers/userController'); 
+const UserController = require('../controllers/userController'); 
 
 // ⭐️ CORREÇÃO: Aplicando o mesmo padrão para middlewares
 const isAuthenticated = require('../src/middlewares/authMiddleware'); 
-const isAdministrator = require('../src/middlewares/isAdministrator'); 
+const isAdministrator = require('../middlewares/isAdministrator'); 
 
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
 
