@@ -1,160 +1,195 @@
-// src/controllers/userController.js
-// Controlador completo para gerenciamento de usuários (CRUD + busca)
-// Todas as funções são exportadas corretamente com module.exports
+// controllers/UserController.js
 
-const bcrypt = require('bcryptjs');
-const jwt = require('jsonwebtoken');
-const { pool } = require('../../config/db'); // Ajuste o caminho se necessário
-const User = require('../../models/User'); // Modelo User com métodos estáticos
+// Usaremos as dependências diretamente aqui, conforme seu código
+const { pool } = require('../../config/db'); 
+const bcrypt = require('bcryptjs'); 
 
-// ===========================
-// 🆕 CRIAR USUÁRIO (POST /api/v1/users)
-// ===========================
-const createUser = async (req, res) => {
-  const { name, email, password, role } = req.body;
+const SALT_ROUNDS = 10;
+const SELECT_USER_FIELDS = 'id, name, email, phone, role, is_active AS "isActive"';
 
-  if (!name || !email || !password) {
-    return res.status(400).json({ error: 'Nome, email e senha são obrigatórios.' });
-  }
+class UserController {
+    
+    /**
+     * @route POST /api/users
+     * Cria um novo usuário (Requer permissão de Admin).
+     */
+    async createUser(req, res) {
+        const { name, email, password, phone, role } = req.body;
 
-  try {
-    // Verifica se o email já existe
-    const existingUser = await User.findByEmail(email);
-    if (existingUser) {
-      return res.status(400).json({ error: 'Este email já está em uso.' });
+        if (!name || !email || !password || !phone || !role) {
+            return res.status(400).json({ success: false, message: 'Nome, e-mail, senha, telefone e papel (role) são obrigatórios.' });
+        }
+
+        try {
+            // 1. Verificar se o usuário já existe
+            const checkQuery = 'SELECT id FROM users WHERE email = $1;';
+            const existingUser = await pool.query(checkQuery, [email]);
+
+            if (existingUser.rows.length > 0) {
+                return res.status(409).json({ success: false, message: 'E-mail já está em uso.' });
+            }
+
+            // 2. Hash da Senha
+            const hashedPassword = await bcrypt.hash(password, SALT_ROUNDS);
+
+            // 3. Inserção no Banco de Dados
+            const insertQuery = `
+                INSERT INTO users (name, email, password_hash, phone, role, is_active, created_at)
+                VALUES ($1, $2, $3, $4, $5, TRUE, NOW())
+                RETURNING ${SELECT_USER_FIELDS};
+            `;
+            const values = [name, email, hashedPassword, phone, role];
+
+            const result = await pool.query(insertQuery, values);
+            const newUser = result.rows[0];
+
+            return res.status(201).json({ 
+                success: true, 
+                message: 'Usuário criado com sucesso.', 
+                data: newUser 
+            });
+
+        } catch (error) {
+            console.error('Erro no controller ao criar usuário:', error);
+            // 23505 é o código de erro para violação de unique constraint (se aplicado a outros campos)
+            if (error.code === '23505') { 
+                return res.status(409).json({ success: false, message: 'E-mail ou telefone já cadastrado.' });
+            }
+            return res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
+        }
     }
 
-    // Hash da senha
-    const salt = await bcrypt.genSalt(10);
-    const hashedPassword = await bcrypt.hash(password, salt);
+    /**
+     * @route GET /api/users
+     * Lista todos os usuários ou filtra por nome/email. (Usado no CRUD/Listagem Admin)
+     */
+    async getUsers(req, res) {
+        const { search } = req.query; // Termo genérico para busca
 
-    // Cria o usuário no banco
-    const newUser = await User.create({
-      name,
-      email,
-      password: hashedPassword,
-      role: role || 'User' // padrão: User
-    });
+        try {
+            let query = `SELECT ${SELECT_USER_FIELDS} FROM users`;
+            const values = [];
 
-    // Remove senha da resposta
-    const { password: _, ...userWithoutPassword } = newUser;
+            if (search) {
+                // Busca por nome ou email de forma case-insensitive (ILIKE)
+                query += ' WHERE name ILIKE $1 OR email ILIKE $1';
+                values.push(`%${search}%`);
+            }
+            
+            query += ' ORDER BY name ASC';
 
-    res.status(201).json({
-      message: 'Usuário criado com sucesso.',
-      user: userWithoutPassword
-    });
-  } catch (error) {
-    console.error('Erro ao criar usuário:', error.message);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
-};
-
-// ===========================
-// 📋 LISTAR TODOS OS USUÁRIOS (GET /api/v1/users)
-// ===========================
-const getUsers = async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT id, name, email, role, created_at, updated_at FROM users ORDER BY name'
-    );
-    res.status(200).json(result.rows);
-  } catch (error) {
-    console.error('Erro ao listar usuários:', error.message);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
-};
-
-// ===========================
-// 🔍 BUSCAR USUÁRIO POR TERMO (GET /api/v1/users/search?q=termo)
-// ===========================
-const searchUser = async (req, res) => {
-  const { q } = req.query;
-
-  if (!q || q.trim().length < 2) {
-    return res.status(400).json({ error: 'Digite pelo menos 2 caracteres para buscar.' });
-  }
-
-  try {
-    const searchTerm = `%${q.trim()}%`;
-    const result = await pool.query(
-      `SELECT id, name, email, role FROM users 
-       WHERE name ILIKE $1 OR email ILIKE $1 
-       ORDER BY name LIMIT 10`,
-      [searchTerm]
-    );
-    res.status(200).json(result.rows);
-  } catch (error) {
-    console.error('Erro na busca de usuário:', error.message);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
-};
-
-// ===========================
-// ✏️ ATUALIZAR USUÁRIO (PUT /api/v1/users/:id)
-// ===========================
-const updateUser = async (req, res) => {
-  const { id } = req.params;
-  const { name, email, password, role } = req.body;
-
-  if (!name && !email && !password && !role) {
-    return res.status(400).json({ error: 'Nenhum dado fornecido para atualização.' });
-  }
-
-  try {
-    const updates = {};
-    if (name) updates.name = name;
-    if (email) updates.email = email;
-    if (role) updates.role = role;
-    if (password) {
-      const salt = await bcrypt.genSalt(10);
-      updates.password = await bcrypt.hash(password, salt);
+            const result = await pool.query(query, values);
+            
+            res.status(200).json({
+                success: true,
+                data: result.rows,
+                count: result.rows.length
+            });
+            
+        } catch (error) {
+            console.error("Erro ao listar usuários:", error.message);
+            res.status(500).json({ success: false, message: 'Erro interno do servidor ao listar.' });
+        }
     }
 
-    const updatedUser = await User.update(id, updates);
-    if (!updatedUser) {
-      return res.status(404).json({ error: 'Usuário não encontrado.' });
+    /**
+     * @route GET /api/users/search?email=...&name=...
+     * Busca um único usuário por nome ou email. (Mantido do seu código original)
+     */
+    async searchUser(req, res) {
+        const { email, name } = req.query;
+        
+        if (!email && !name) {
+            return res.status(400).json({ error: 'Forneça um nome ou e-mail para a busca.' });
+        }
+
+        try {
+            let result;
+            const selectFields = SELECT_USER_FIELDS; 
+            
+            if (email) {
+                result = await pool.query(`SELECT ${selectFields} FROM users WHERE LOWER(email) = LOWER($1)`, [email]);
+            } else if (name) {
+                result = await pool.query(`SELECT ${selectFields} FROM users WHERE name ILIKE $1`, [`%${name}%`]);
+            } else {
+                return res.status(400).json({ error: 'Parâmetro de busca não reconhecido.' });
+            }
+            
+            const user = result.rows[0];
+
+            if (!user) {
+                return res.status(404).json({ error: "Usuário não encontrado." });
+            }
+            
+            res.status(200).json(user);
+
+        } catch (error) {
+            console.error("Erro ao buscar usuário:", error.message);
+            res.status(500).json({ error: 'Erro interno do servidor ao buscar.' });
+        }
     }
 
-    const { password: _, ...userWithoutPassword } = updatedUser;
-    res.status(200).json({
-      message: 'Usuário atualizado com sucesso.',
-      user: userWithoutPassword
-    });
-  } catch (error) {
-    if (error.code === '23505') {
-      return res.status(400).json({ error: 'Este email já está em uso.' });
+    /**
+     * @route PUT /api/users/:id
+     * Atualizar um usuário (nome, email, phone, role, isActive).
+     */
+    async updateUser(req, res) {
+        const { id } = req.params;
+        const { name, email, phone, role, isActive } = req.body;
+        
+        // CRÍTICO: 'isActive' é boolean, não pode ser verificado com !isActive a menos que seja undefined ou null
+        if (!name || !email || !phone || !role || typeof isActive !== 'boolean') {
+            return res.status(400).json({ error: 'Por favor, forneça todos os campos obrigatórios (name, email, phone, role, isActive).' });
+        }
+
+        try {
+            const result = await pool.query(
+                `UPDATE users 
+                SET name = $1, email = $2, phone = $3, role = $4, is_active = $5, updated_at = NOW()
+                WHERE id = $6 RETURNING ${SELECT_USER_FIELDS}`,
+                [name, email, phone, role, isActive, id] 
+            );
+
+            const updatedUser = result.rows[0];
+
+            if (updatedUser) {
+                res.status(200).json({ success: true, message: 'Usuário atualizado com sucesso.', data: updatedUser });
+            } else {
+                res.status(404).json({ success: false, message: 'Usuário não encontrado para atualização.' });
+            }
+
+        } catch (error) {
+            console.error("Erro ao atualizar usuário:", error.message);
+            if (error.code === '23505') { // Código de unique constraint
+                return res.status(409).json({ success: false, message: 'Este e-mail ou telefone já está sendo usado por outra conta.' });
+            }
+            res.status(500).json({ success: false, message: 'Erro interno do servidor ao atualizar.' });
+        }
     }
-    console.error('Erro ao atualizar usuário:', error.message);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
-};
 
-// ===========================
-// 🗑️ EXCLUIR USUÁRIO (DELETE /api/v1/users/:id)
-// ===========================
-const deleteUser = async (req, res) => {
-  const { id } = req.params;
+    /**
+     * @route DELETE /api/users/:id
+     * Deleta um usuário. (Geralmente, setamos is_active=FALSE ao invés de deletar)
+     */
+    async deleteUser(req, res) {
+        const { id } = req.params;
 
-  try {
-    const wasDeleted = await User.delete(id);
-    if (!wasDeleted) {
-      return res.status(404).json({ error: 'Usuário não encontrado.' });
+        try {
+            // Tentaremos deletar (ou desativar, dependendo da sua regra)
+            const result = await pool.query('DELETE FROM users WHERE id = $1 RETURNING id', [id]);
+            
+            if (result.rowCount === 0) {
+                return res.status(404).json({ success: false, message: 'Usuário não encontrado.' });
+            }
+
+            res.status(200).json({ success: true, message: 'Usuário excluído com sucesso.' });
+
+        } catch (error) {
+            console.error("Erro ao deletar usuário:", error.message);
+            res.status(500).json({ success: false, message: 'Erro interno do servidor ao excluir.' });
+        }
     }
+}
 
-    res.status(200).json({ message: 'Usuário excluído com sucesso.' });
-  } catch (error) {
-    console.error('Erro ao excluir usuário:', error.message);
-    res.status(500).json({ error: 'Erro interno do servidor.' });
-  }
-};
-
-// ===========================
-// EXPORTA TODAS AS FUNÇÕES
-// ===========================
-module.exports = {
-  createUser,
-  getUsers,
-  searchUser,
-  updateUser,
-  deleteUser
-};
+// Exporta a instância do Controller para ser usada nas rotas
+module.exports = new UserController();
