@@ -1,17 +1,32 @@
-// src/routes/users.js
+// routes/users.js
 
 const express = require('express');
 const router = express.Router();
-// Ajuste o caminho para o seu controller
-const UserController = require('../../controllers/UserController'); 
 
-// Assume que você tem este middleware configurado:
-const isAuthenticated = require('../middlewares/isAuthenticated'); // Ou use o seu middleware atual
+// O Controller está na pasta controllers/ na raiz, o caminho é '../controllers/UserController'
+const UserController = require('../controllers/UserController'); 
+// O Middleware isAuthenticated e isAdministrator estão na pasta src/middlewares
+const isAuthenticated = require('../src/middlewares/isAuthenticated'); 
+const isAdministrator = require('../src/middlewares/isAdministrator'); 
 
-// Rota de criação de usuário (protegida por autenticação)
-// Idealmente, você teria um middleware isAdministrator aqui também.
-router.post('/', isAuthenticated, UserController.createUser);
+// ===================================
+// ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
+// ===================================
 
-// Outras rotas (GET, PUT, DELETE) virão depois...
+// Rota de criação (POST)
+router.post('/', isAuthenticated, isAdministrator, UserController.createUser);
+
+// Rota de listagem e busca geral (GET /api/users ou /api/users?search=...)
+router.get('/', isAuthenticated, isAdministrator, UserController.getUsers);
+
+// Rota de busca específica (GET /api/users/search?email=...)
+router.get('/search', isAuthenticated, UserController.searchUser);
+
+// Rota de atualização (PUT /api/users/:id)
+router.put('/:id', isAuthenticated, isAdministrator, UserController.updateUser);
+
+// Rota de exclusão (DELETE /api/users/:id)
+router.delete('/:id', isAuthenticated, isAdministrator, UserController.deleteUser);
+
 
 module.exports = router;
