@@ -1,18 +1,15 @@
-// routes/users.js (CORRIGIDO)
+// routes/users.js
 
 const express = require('express');
 const router = express.Router();
 
-// ⭐️ CORREÇÃO AQUI: Mudamos de '../controllers/UserController' para '../../controllers/UserController'
-// Assumindo que: 
-// Seu arquivo está em: /src/routes/users.js
-// Seu controller está em: /controllers/UserController.js
-// Subir duas pastas (../..) leva à raiz, onde a pasta 'controllers' existe.
-const UserController = require('../../controllers/UserController'); 
+// ⭐️ TENTATIVA DE CORREÇÃO FINAL 2.0: Subindo apenas um nível.
+// Isso funcionaria se o Render considerasse '/opt/render/project/src/' a raiz do projeto.
+const UserController = require('../controllers/UserController'); 
 
 // Assumindo que seu middleware está em src/middlewares
-const isAuthenticated = require('../src/middlewares/isAuthenticated'); 
-const isAdministrator = require('../src/middlewares/isAdministrator'); 
+const isAuthenticated = require('../middlewares/isAuthenticated'); 
+const isAdministrator = require('../middlewares/isAdministrator'); 
 
 // ===================================
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
