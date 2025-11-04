@@ -5,7 +5,7 @@ const router = express.Router();
 
 // ⭐️ TENTATIVA DE CORREÇÃO FINAL 2.0: Subindo apenas um nível.
 // Isso funcionaria se o Render considerasse '/opt/render/project/src/' a raiz do projeto.
-const UserController = require('../src/controllers/UserController'); 
+const UserController = require('../src/controllers/userController'); 
 
 // Assumindo que seu middleware está em src/middlewares
 const isAuthenticated = require('../middlewares/isAuthenticated'); 
