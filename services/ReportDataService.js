@@ -1,8 +1,6 @@
-// src/services/ReportDataService.js
+// services/ReportDataService.js
 
-const { pool } = require('../../config/db');
-// ❌ IMPORTAÇÃO DO SQLUTILS REMOVIDA:
-// const SqlUtils = require('../../utils/SqlUtils'); 
+const { pool } = require('../db'); // CORRIGIDO: '../../config/db' -> '../db' (ajustado para estrutura na raiz)
 
 class ReportDataService {
     
@@ -92,118 +90,71 @@ class ReportDataService {
         const result = await pool.query(query, values);
         return {
             reasons: result.rows,
-            totalLost: result.rows.reduce((sum, r) => sum + parseInt(r.count, 10), 0)
         };
     }
 
     // =============================================================
-    // 4. BUSCA DAS ETAPAS DO FUNIL (FUNNEL STAGES)
+    // 4. BUSCA DAS MÉTRICAS DO DASHBOARD (PRINCIPAL)
     // =============================================================
 
-    async getFunnelStages(filters, userId, isAdmin) {
-        const { whereClause, values } = this._buildBaseConditions(filters, userId, isAdmin);
-        
-        const query = `
-            SELECT 
-                l.stage AS stage_name,
-                COUNT(l.id) AS count
-            FROM leads l
-            ${whereClause}
-            GROUP BY 1
-            -- Ordena por uma ordem lógica do funil
-            ORDER BY 
-                CASE l.stage
-                    WHEN 'Primeiro Contato' THEN 1
-                    WHEN 'Qualificação' THEN 2
-                    WHEN 'Proposta' THEN 3
-                    WHEN 'Negociação' THEN 4
-                    WHEN 'Fechado Ganho' THEN 5
-                    WHEN 'Fechado Perdido' THEN 6
-                    ELSE 7
-                END;
-        `;
-
-        const result = await pool.query(query, values);
-        return result.rows.map(row => ({
-            stageName: row.stage_name,
-            count: parseInt(row.count, 10)
-        }));
-    }
-
-    // =============================================================
-    // 2. BUSCA PRINCIPAL (Métricas para o Dashboard) - AGORA INTEGRANDO TUDO
-    // =============================================================
-    
-    /**
-     * Busca todas as métricas necessárias para popular o dashboard de relatórios.
-     */
     async getDashboardMetrics(filters, userId, isAdmin) {
         try {
+            // A. Constrói a condição base para todas as consultas
             const { whereClause, values } = this._buildBaseConditions(filters, userId, isAdmin);
-            
-            // 1. Executa a consulta principal de métricas agregadas
-            const metricsQuery = `
-                WITH BaseLeads AS (
-                    -- Seleciona todos os leads ativos com os filtros aplicados
-                    SELECT 
-                        l.id, l.stage, l.value, l.created_at, l.updated_at,
-                        CASE 
-                            WHEN l.stage = 'Fechado Ganho' THEN EXTRACT(DAY FROM (l.updated_at - l.created_at))
-                            ELSE NULL 
-                        END AS closing_days
-                    FROM leads l
-                    ${whereClause}
-                ),
-                WonLeads AS ( ... ), -- CTEs de Won, Lost, Active Leads (Mantidas do código anterior)
-                LostLeads AS ( ... ),
-                ActiveLeads AS ( ... )
-                
-                -- Seções de CTEs aqui para otimização...
-                -- Devido ao limite de tamanho, a query principal será reescrita como múltiplas consultas 
-                -- para integrar os resultados dos métodos auxiliares.
-            `;
-            
-            // ⚠️ Para simplificar e garantir que os dados de Funil e LostReasons sejam populados,
-            // vamos chamar os métodos auxiliares aqui.
-            
-            // A. Chama a query principal de métricas (mantendo a otimização de uma única query)
+
+            // B. Consulta principal (Métricas Aggregadas)
             const mainQuery = `
                 WITH BaseLeads AS (
-                    SELECT 
-                        l.id, l.stage, l.value, l.created_at, l.updated_at,
-                        CASE 
-                            WHEN l.stage = 'Fechado Ganho' THEN EXTRACT(DAY FROM (l.updated_at - l.created_at))
-                            ELSE NULL 
-                        END AS closing_days
+                    SELECT COUNT(*) AS total_leads_base
                     FROM leads l
                     ${whereClause}
                 ),
+                ActiveLeads AS (
+                    SELECT 
+                        COUNT(*) AS leads_active,
+                        COALESCE(SUM(estimated_savings), 0) AS total_pipeline_value,
+                        COALESCE(
+                            SUM(CASE 
+                                WHEN l.status = 'Novo' THEN estimated_savings * 0.1
+                                WHEN l.status = 'Contato Inicial' THEN estimated_savings * 0.3
+                                WHEN l.status = 'Qualificado' THEN estimated_savings * 0.5
+                                WHEN l.status = 'Proposta Enviada' THEN estimated_savings * 0.7
+                                WHEN l.status = 'Em Negociação' THEN estimated_savings * 0.9
+                                ELSE 0
+                            END),
+                            0
+                        ) AS weighted_value
+                    FROM leads l
+                    ${whereClause}
+                    AND l.status NOT IN ('Ganho', 'Perdido')
+                ),
                 WonLeads AS (
-                    SELECT COUNT(id) AS total_won_count, COALESCE(SUM(value), 0) AS total_won_value, COALESCE(AVG(closing_days), 0) AS avg_closing_time_days
-                    FROM BaseLeads WHERE stage = 'Fechado Ganho'
+                    SELECT 
+                        COUNT(*) AS total_won_count,
+                        COALESCE(SUM(estimated_savings), 0) AS total_won_value,
+                        COALESCE(
+                            AVG(EXTRACT(DAY FROM (date_won - created_at))) FILTER (WHERE date_won IS NOT NULL),
+                            0
+                        ) AS avg_closing_time_days
+                    FROM leads l
+                    ${whereClause}
+                    AND l.status = 'Ganho'
                 ),
                 LostLeads AS (
-                    SELECT COUNT(id) AS total_lost_count FROM BaseLeads WHERE stage = 'Fechado Perdido'
-                ),
-                ActiveLeads AS (
-                    SELECT
-                        COUNT(id) AS leads_active,
-                        COALESCE(SUM(value * (
-                            CASE stage WHEN 'Qualificação' THEN 0.25 WHEN 'Proposta' THEN 0.50 WHEN 'Negociação' THEN 0.75 ELSE 0.05 END
-                        )), 0) AS weighted_value,
-                        COALESCE(SUM(value), 0) AS total_pipeline_value
-                    FROM BaseLeads WHERE stage NOT IN ('Fechado Ganho', 'Fechado Perdido')
+                    COUNT(*) AS total_lost_count
+                    FROM leads l
+                    ${whereClause}
+                    AND l.status = 'Perdido'
                 )
-                
-                SELECT
+                SELECT 
+                    (SELECT total_leads_base FROM BaseLeads) AS total_leads_base,
                     (SELECT leads_active FROM ActiveLeads) AS leads_active,
                     (SELECT total_won_count FROM WonLeads) AS total_won_count,
                     (SELECT total_won_value FROM WonLeads) AS total_won_value,
                     (SELECT avg_closing_time_days FROM WonLeads) AS avg_closing_time_days,
                     (SELECT total_lost_count FROM LostLeads) AS total_lost_count,
                     (SELECT weighted_value FROM ActiveLeads) AS weighted_value,
-                    (SELECT total_pipeline_value FROM ActiveLeads) AS total_pipeline_value,
-                    (SELECT COUNT(id) FROM BaseLeads) AS total_leads_base;
+                    (SELECT total_pipeline_value FROM ActiveLeads) AS total_pipeline_value;
             `;
 
             const result = await pool.query(mainQuery, values);

@@ -1,4 +1,4 @@
-// src/services/PDFGenerator.js
+// services/PDFGenerator.js
 const PDFDocument = require('pdfkit');
 const getStream = require('get-stream');
 const { stringify } = require('csv-stringify');
@@ -99,7 +99,7 @@ exports.generateCsvString = async (data) => {
         Origem: lead.origin,
         Vendedor: lead.owner_name,
         'Data Criação': new Date(lead.created_at).toLocaleDateString('pt-BR'),
-        'Valor Proposta (R$)': lead.estimated_savings,
+        'Valor Proposta (R$)' : lead.estimated_savings,
         'Motivo Perda': lead.reason_for_loss || '',
         'Data Ganho': lead.date_won ? new Date(lead.date_won).toLocaleDateString('pt-BR') : ''
     }));

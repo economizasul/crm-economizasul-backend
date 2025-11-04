@@ -1,8 +1,7 @@
 // controllers/ReportController.js
 
-// O caminho correto deve subir dois níveis (para a raiz do deploy) e descer para 'services'
+// CORRIGIDO: Caminho para ReportDataService ajustado para estrutura na raiz
 const ReportDataService = require('../services/ReportDataService');
-
 
 // Dependências de Exportação
 const pdfKit = require('pdfkit');    
@@ -19,11 +18,10 @@ class ReportController {
     }
     
     // =============================================================
-    // MÉTODOS DE DADOS (Não alterados, apenas adicionados ao constructor)
+    // MÉTODOS DE DADOS
     // =============================================================
     
     async getReportData(req, res) {
-        // ... (Seu código existente aqui)
         try {
             const { filters, userId, isAdmin } = req.body.context;
             const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
@@ -35,7 +33,6 @@ class ReportController {
     }
     
     async getAnalyticNotes(req, res) {
-        // ... (Seu código existente aqui)
         try {
             const { filters, userId, isAdmin } = req.body.context;
             const notes = await ReportDataService.getAnalyticNotes(filters, userId, isAdmin);
@@ -48,11 +45,10 @@ class ReportController {
 
 
     // =============================================================
-    // MÉTODOS DE EXPORTAÇÃO (Inalterados, apenas revalidados)
+    // MÉTODOS DE EXPORTAÇÃO
     // =============================================================
 
     async exportCsv(req, res) {
-        // ... Lógica de exportação CSV (mantida)
         try {
             const { filters, userId, isAdmin } = req.body.context;
             const leadData = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
@@ -73,36 +69,37 @@ class ReportController {
                 { header: 'Origem', key: 'origin', width: 15 },
                 { header: 'Proprietário', key: 'owner_name', width: 20 },
                 { header: 'UC', key: 'uc', width: 15 },
-                { header: 'Consumo Médio', key: 'avg_consumption', width: 20 },
-                { header: 'Economia Estimada', key: 'estimated_savings', width: 25 },
-                { header: 'Notas', key: 'notes', width: 40 },
+                { header: 'Consumo Médio', key: 'avg_consumption', width: 15 },
+                { header: 'Economia Estimada', key: 'estimated_savings', width: 15 },
+                { header: 'QSA', key: 'qsa', width: 30 },
+                { header: 'Notas', key: 'notes', width: 50 },
+                { header: 'Latitude', key: 'lat', width: 15 },
+                { header: 'Longitude', key: 'lng', width: 15 },
                 { header: 'Criado em', key: 'created_at', width: 20 },
-                { header: 'Atualizado em', key: 'updated_at', width: 20 },
+                { header: 'Atualizado em', key: 'updated_at', width: 20 }
             ];
 
-            // 3. Adicionar Linhas
-            leadData.forEach(lead => {
-                // Formatação simples de Notas (se for JSON, pega o texto da primeira, se não for, usa como string)
-                let noteText = '';
-                if (lead.notes) {
-                    try {
-                        const notesArray = JSON.parse(lead.notes);
-                        if (Array.isArray(notesArray) && notesArray.length > 0) {
-                            noteText = notesArray[0].text;
-                        }
-                    } catch (e) {
-                        noteText = lead.notes;
-                    }
-                }
-                
-                worksheet.addRow({
-                    ...lead,
-                    notes: noteText,
-                    created_at: lead.created_at ? new Date(lead.created_at).toLocaleString('pt-BR') : '',
-                    updated_at: lead.updated_at ? new Date(lead.updated_at).toLocaleString('pt-BR') : ''
-                });
-            });
-
+            // 3. Adicionar Dados
+            worksheet.addRows(leadData.map(lead => ({
+                id: lead.id,
+                name: lead.name,
+                phone: lead.phone,
+                email: lead.email || '',
+                document: lead.document || '',
+                address: lead.address || '',
+                status: lead.status,
+                origin: lead.origin,
+                owner_name: lead.owner_name || 'Desconhecido',
+                uc: lead.uc || '',
+                avg_consumption: lead.avg_consumption || 0,
+                estimated_savings: lead.estimated_savings || 0,
+                qsa: lead.qsa || '',
+                notes: lead.notes || '',
+                lat: lead.lat || '',
+                lng: lead.lng || '',
+                created_at: lead.created_at ? new Date(lead.created_at).toLocaleString('pt-BR') : '',
+                updated_at: lead.updated_at ? new Date(lead.updated_at).toLocaleString('pt-BR') : ''
+            })));
 
             // 4. Configurar cabeçalhos da resposta
             res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
@@ -119,7 +116,6 @@ class ReportController {
     }
 
     async exportPdf(req, res) {
-        // ... Lógica de exportação PDF (mantida)
         try {
             const { filters, userId, isAdmin } = req.body.context;
             const prod = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);

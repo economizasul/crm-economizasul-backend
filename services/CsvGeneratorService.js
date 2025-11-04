@@ -1,4 +1,4 @@
-// src/services/CsvGeneratorService.js
+// services/CsvGeneratorService.js
 
 const { stringify } = require('csv-stringify'); 
 
@@ -34,10 +34,13 @@ class CsvGeneratorService {
         const columns = [
             { key: 'id', header: 'ID' },
             { key: 'name', header: 'Nome' },
-            { key: 'stage', header: 'Fase' },
-            { key: 'source', header: 'Origem' },
-            { key: 'value', header: 'Valor (R$)' },
-            { key: 'createdAt', header: 'Data de Cadastro' },
+            { key: 'phone', header: 'Telefone' },
+            { key: 'email', header: 'E-mail' },
+            { key: 'status', header: 'Status' },
+            { key: 'origin', header: 'Origem' },
+            { key: 'owner_name', header: 'Proprietário' },
+            { key: 'created_at', header: 'Criado em' },
+            { key: 'estimated_savings', header: 'Economia Estimada (R$)' }
             // Adicione mais colunas do seu Schema aqui
         ];
         
@@ -45,10 +48,13 @@ class CsvGeneratorService {
         const mappedData = leads.map(lead => ({
             id: lead.id,
             name: lead.name,
-            stage: lead.stage,
-            source: lead.source,
-            value: lead.value ? lead.value.toFixed(2) : '0.00',
-            createdAt: new Date(lead.createdAt).toLocaleDateString('pt-BR'),
+            phone: lead.phone,
+            email: lead.email || 'N/A',
+            status: lead.status,
+            origin: lead.origin,
+            owner_name: lead.owner_name || 'N/A',
+            created_at: new Date(lead.created_at).toLocaleDateString('pt-BR'),
+            estimated_savings: lead.estimated_savings ? lead.estimated_savings.toLocaleString('pt-BR', { minimumFractionDigits: 2 }) : '0,00'
         }));
         
         return this.generateCsv(mappedData, columns);
