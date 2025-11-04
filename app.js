@@ -15,7 +15,7 @@ const userRoutes = require('./src/routes/users');
 const authRoutes = require('./src/routes/authRoutes');
 const clientRoutes = require('./src/routes/clientRoutes');
 const reportRoutes = require('./src/routes/reports');
-const leadRoutes = require('./routes/leadRoutes');
+const leadRoutes = require('./src/routes/leadRoutes');
 const pipelineRoutes = require('./src/routes/pipelineRoutes');
 const configRoutes = require('./src/routes/configuracoes');
 
