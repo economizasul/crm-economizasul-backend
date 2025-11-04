@@ -7,24 +7,14 @@ const router = express.Router();
 const UserController = require('../controllers/userController');
 
 // Middlewares
-const isAuthenticated = require('../middleware/authMiddleware');
+const isAuthenticated = require('../middleware/authMiddleware'); // agora exporta uma função
 const isAdministrator = require('../middleware/isAdministrator');
 
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
-
-// Criação de usuário
 router.post('/', isAuthenticated, isAdministrator, UserController.createUser);
-
-// Listagem de usuários
 router.get('/', isAuthenticated, isAdministrator, UserController.getUsers);
-
-// Busca por e-mail
 router.get('/search', isAuthenticated, UserController.searchUser);
-
-// Atualização de usuário
 router.put('/:id', isAuthenticated, isAdministrator, UserController.updateUser);
-
-// Exclusão de usuário
 router.delete('/:id', isAuthenticated, isAdministrator, UserController.deleteUser);
 
 module.exports = router;
