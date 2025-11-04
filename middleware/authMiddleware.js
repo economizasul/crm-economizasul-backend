@@ -1,7 +1,7 @@
 // src/middleware/authMiddleware.js
 
 const jwt = require('jsonwebtoken');
-const pool = require('../db'); // ajuste: agora o app.js está na raiz
+const pool = require('../db');
 
 // =============================================================
 // FUNÇÃO AUXILIAR: Buscar usuário por ID
