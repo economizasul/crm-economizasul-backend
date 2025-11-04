@@ -17,7 +17,6 @@ class ReportController {
       const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
       res.status(200).json({ success: true, data: metrics });
     } catch (error) {
-      console.error('Erro ao buscar dados do dashboard:', error);
       res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
     }
   }
@@ -29,7 +28,6 @@ class ReportController {
       if (!notes) return res.status(404).json({ success: false, message: 'Lead não encontrado.' });
       res.status(200).json({ success: true, data: notes });
     } catch (error) {
-      console.error('Erro ao buscar notas analíticas:', error);
       res.status(500).json({ success: false, message: 'Erro interno do servidor.' });
     }
   }
@@ -72,7 +70,6 @@ class ReportController {
       await workbook.xlsx.write(res);
       res.end();
     } catch (error) {
-      console.error('Erro ao exportar CSV:', error);
       res.status(500).json({ error: 'Erro ao exportar CSV.' });
     }
   }
@@ -122,7 +119,6 @@ class ReportController {
 
       doc.end();
     } catch (error) {
-      console.error('Erro ao exportar PDF:', error);
       res.status(500).json({ error: 'Erro ao exportar PDF.' });
     }
   }

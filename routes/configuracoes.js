@@ -2,9 +2,9 @@
 const express = require('express');
 const router = express.Router();
 const ConfigController = require('../controllers/ConfigController');
-const { protect, adminOnly } = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 
-router.use(protect, adminOnly);
+router.use(protect);
 
 router.get('/vendedores', ConfigController.getVendedores);
 router.put('/vendedor/:id', ConfigController.updateVendedor);

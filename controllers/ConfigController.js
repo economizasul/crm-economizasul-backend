@@ -8,6 +8,10 @@ class ConfigController {
   }
 
   async getVendedores(req, res) {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
     try {
       const result = await pool.query(`
         SELECT 
@@ -20,12 +24,15 @@ class ConfigController {
       `);
       res.json(result.rows);
     } catch (err) {
-      console.error('Erro ao listar vendedores:', err);
       res.status(500).json({ error: 'Erro ao carregar usuários' });
     }
   }
 
   async updateVendedor(req, res) {
+    if (!req.user || req.user.role !== 'admin') {
+      return res.status(403).json({ error: 'Acesso negado' });
+    }
+
     const { id } = req.params;
     const {
       relatorios_proprios_only = true,
@@ -61,7 +68,6 @@ class ConfigController {
 
       res.json(result.rows[0]);
     } catch (err) {
-      console.error('Erro ao atualizar permissões:', err);
       res.status(500).json({ error: 'Erro ao salvar permissões' });
     }
   }
