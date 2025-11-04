@@ -1,4 +1,7 @@
 // src/routes/leadRoutes.js
+const controller = require('../controllers/leadController');
+console.log('Controller importado:', controller);
+
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');

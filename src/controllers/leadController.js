@@ -1,4 +1,5 @@
 // controllers/leadController.js
+console.log('LEAD CONTROLLER CARREGADO COM SUCESSO');
 
 const { pool } = require('../../config/db');
 const axios = require('axios');
