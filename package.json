@@ -8,7 +8,7 @@
   "license": "MIT",
   "private": false,
   "scripts": {
-    "start": "node src/app.js"
+    "start": "node app.js"
 
   },
   "dependencies": {
