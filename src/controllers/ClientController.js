@@ -1,6 +1,6 @@
 // controllers/ClientController.js
 
-const Client = require('../models/Client'); 
+const Client = require('../../models/Client'); 
 
 class ClientController {
     // 1. Criar Cliente (POST /api/clients)

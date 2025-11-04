@@ -1,6 +1,6 @@
 // controllers/leadController.js
 
-const { pool } = require('../config/db');
+const { pool } = require('../../config/db');
 const axios = require('axios');
 const Lead = require('../models/Lead'); 
 

@@ -1,7 +1,7 @@
 // controllers/ReportController.js
 
 // O caminho correto deve subir um nível (para a raiz) e descer para 'src/services'
-const ReportDataService = require('../src/services/ReportDataService');
+const ReportDataService = require('../../services/ReportDataService');
 
 // Dependências de Exportação
 const pdfKit = require('pdfkit');    
