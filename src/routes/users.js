@@ -7,8 +7,9 @@ const router = express.Router();
 const UserController = require('../controllers/userController'); 
 
 // ⭐️ CORREÇÃO: Aplicando o mesmo padrão para middlewares
-const isAuthenticated = require('../src/middlewares/authMiddleware'); 
-const isAdministrator = require('../middlewares/isAdministrator'); 
+const isAuthenticated = require('../middleware/authMiddleware');
+const isAdministrator = require('../middleware/isAdministrador');
+
 
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
 

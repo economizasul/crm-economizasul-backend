@@ -8,8 +8,8 @@ const router = express.Router();
 const UserController = require('../src/controllers/userController'); 
 
 // Assumindo que seu middleware está em src/middlewares
-const isAuthenticated = require('../middlewares/isAuthenticated'); 
-const isAdministrator = require('../middlewares/isAdministrator'); 
+const isAuthenticated = require('../middleware/isAuthenticated'); 
+const isAdministrator = require('../middleware/isAdministrator'); 
 
 // ===================================
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
