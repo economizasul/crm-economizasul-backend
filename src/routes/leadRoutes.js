@@ -4,12 +4,12 @@ const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 
 const { 
-    createLead, 
-    getAllLeads, 
-    updateLead, 
-    getUsersForReassignment, 
-    deleteLead, 
-    getLeadById
+  createLead, 
+  getAllLeads, 
+  updateLead, 
+  getUsersForReassignment, 
+  deleteLead, 
+  getLeadById 
 } = require('../controllers/leadController');
 
 // Rotas
