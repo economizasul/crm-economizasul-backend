@@ -13,7 +13,7 @@ const {
     getUsersForReassignment, 
     deleteLead, 
     getLeadById,
-} = require('../controllers/leadController');
+} = require('../src/controllers/leadController');
 
 // Rotas principais de Leads
 router.route('/')

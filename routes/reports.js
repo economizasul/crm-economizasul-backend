@@ -7,7 +7,7 @@ const router = express.Router();
 // Se o Controller está em controllers/ReportController.js na raiz, o caminho é './controllers/ReportController'
 // Se o Controller está em src/controllers/ReportController.js, o caminho é './src/controllers/ReportController'
 // **Assumindo que está na raiz:**
-const ReportController = require('../controllers/ReportController'); 
+const ReportController = require('../src/controllers/ReportController'); 
 
 // 2. Assumindo que você tem um middleware de autenticação (isAuthenticated)
 

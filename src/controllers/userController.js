@@ -1,7 +1,7 @@
 // controllers/UserController.js
 
 // Usaremos as dependências diretamente aqui, conforme seu código
-const { pool } = require('../config/db'); 
+const { pool } = require('../../config/db'); 
 const bcrypt = require('bcryptjs'); 
 
 const SALT_ROUNDS = 10;
