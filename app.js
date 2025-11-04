@@ -11,13 +11,14 @@ const path = require('path');
 const history = require('connect-history-api-fallback');
 
 // Rotas (importadas uma única vez)
-const userRoutes = require('./routes/users');
-const authRoutes = require('./routes/authRoutes');
-const clientRoutes = require('./routes/clientRoutes');
-const reportRoutes = require('./routes/reports');
-const leadRoutes = require('./routes/leadRoutes');
-const pipelineRoutes = require('./routes/pipelineRoutes');
-const configRoutes = require('./routes/configuracoes');
+const userRoutes = require('./src/routes/users');
+const authRoutes = require('./src/routes/authRoutes');
+const clientRoutes = require('./src/routes/clientRoutes');
+const reportRoutes = require('./src/routes/reports');
+const leadRoutes = require('./src/routes/leadRoutes');
+const pipelineRoutes = require('./src/routes/pipelineRoutes');
+const configRoutes = require('./src/routes/configuracoes');
+
 
 // Modelos (para inicialização do banco)
 const Lead = require("./models/Lead");
