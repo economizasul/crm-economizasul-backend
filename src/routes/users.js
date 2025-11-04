@@ -1,32 +1,30 @@
-// routes/users.js
+// src/routes/users.js
 
 const express = require('express');
 const router = express.Router();
 
-// ⭐️ CORREÇÃO: Usa '../src/controllers/' para lidar com a estrutura inconsistente do Render
-const UserController = require('../controllers/userController'); 
+// Controlador
+const UserController = require('../controllers/userController');
 
-// ⭐️ CORREÇÃO: Aplicando o mesmo padrão para middlewares
+// Middlewares
 const isAuthenticated = require('../middleware/authMiddleware');
-const isAdministrator = require('../middleware/isAdministrador');
-
+const isAdministrator = require('../middleware/isAdministrator');
 
 // ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
 
-// Rota de criação (POST)
+// Criação de usuário
 router.post('/', isAuthenticated, isAdministrator, UserController.createUser);
 
-// Rota de listagem e busca geral (GET /api/users ou /api/users?search=...)
+// Listagem de usuários
 router.get('/', isAuthenticated, isAdministrator, UserController.getUsers);
 
-// Rota de busca específica (GET /api/users/search?email=...)
+// Busca por e-mail
 router.get('/search', isAuthenticated, UserController.searchUser);
 
-// Rota de atualização (PUT /api/users/:id)
+// Atualização de usuário
 router.put('/:id', isAuthenticated, isAdministrator, UserController.updateUser);
 
-// Rota de exclusão (DELETE /api/users/:id)
+// Exclusão de usuário
 router.delete('/:id', isAuthenticated, isAdministrator, UserController.deleteUser);
-
 
 module.exports = router;
