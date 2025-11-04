@@ -1,6 +1,6 @@
 // models/Client.js
 
-const { pool } = require('../config/db');
+const { pool } = require('../db'); // Ajustado para estrutura na raiz
 
 class Client {
     // 1. Criar um novo cliente no banco de dados (CREATE)

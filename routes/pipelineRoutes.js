@@ -1,4 +1,4 @@
-// src/routes/pipelineRoutes.js
+// routes/pipelineRoutes.js
 
 const express = require('express');
 const router = express.Router();

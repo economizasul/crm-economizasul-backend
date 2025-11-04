@@ -1,12 +1,12 @@
 // models/User.js
-const { pool } = require('../config/db');
+const { pool } = require('../db'); // Ajustado para estrutura na raiz
 const bcrypt = require('bcrypt'); // Importa o bcrypt para criptografia de senha
 
 // Nível de segurança da criptografia (padrão 10)
 const SALT_ROUNDS = 10; 
 
 class User {
-    // 0. NOVO MÉTODO: Cria a tabela de Usuários se não existir (CRÍTICO)
+    // N. NOVO MÉTODO: Cria a tabela de Usuários se não existir (CRÍTICO)
     static async createTable() {
         const query = `
             CREATE TABLE IF NOT EXISTS users (

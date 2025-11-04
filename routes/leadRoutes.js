@@ -1,6 +1,4 @@
-// src/routes/leadRoutes.js
-const controller = require('../controllers/leadController');
-console.log('Controller importado:', controller);
+// routes/leadRoutes.js
 
 const express = require('express');
 const router = express.Router();

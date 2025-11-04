@@ -1,6 +1,6 @@
 // models/Lead.js
 
-const { pool } = require('../config/db');
+const { pool } = require('../db'); // Ajustado para estrutura na raiz
 
 class Lead {
     // 1. Cria a tabela de Leads se não existir (CORRIGIDA)
@@ -134,90 +134,35 @@ class Lead {
             throw error;
         }
     }
-    
-    // 5. Atualiza Lead (Mantida)
-    static async update(id, { 
-        name, phone, document, address, status, origin, 
-        ownerId, 
-        email, avgConsumption, estimatedSavings, notes, uc, qsa, lat, lng,
-        reasonForLoss, 
-        dateWon 
-    }) {
-        const safeOwnerId = ownerId === undefined || ownerId === null || isNaN(parseInt(ownerId)) ? null : parseInt(ownerId);
-        
-        let updateFields = [
-            `name = $1`, `phone = $2`, `document = $3`, `address = $4`, 
-            `status = $5`, `origin = $6`, `owner_id = $7`, `updated_at = CURRENT_TIMESTAMP`, 
-            `email = $8`, `uc = $9`, `avg_consumption = $10`, `estimated_savings = $11`, 
-            `notes = $12`, `qsa = $13`, `lat = $14`, `lng = $15`, 
-            `reason_for_loss = $16`
-        ];
-        const values = [
-            name, phone, document, address, status, origin,
-            safeOwnerId,
-            email,             
-            uc,              
-            avgConsumption ? parseFloat(avgConsumption) : null, 
-            estimatedSavings ? parseFloat(estimatedSavings) : null, 
-            notes,             
-            qsa,               
-            lat,               
-            lng,               
-            reasonForLoss     
-        ];
 
-        if (status === 'Ganho' && dateWon) {
-            updateFields.push(`date_won = COALESCE(date_won, $17)`);
-            values.push(dateWon);
-        } else if (status !== 'Ganho') {
-            updateFields.push(`date_won = NULL`);
-        }
-
-        const query = `
-            UPDATE leads
-            SET ${updateFields.join(', ')}
-            WHERE id = $${values.length + 1}
-            RETURNING *;
-        `;
-        values.push(id); 
-
-        try {
-            const result = await pool.query(query, values);
-            return result.rows[0] || null;
-        } catch (error) {
-            console.error(`Erro CRÍTICO no modelo Lead.update (ID: ${id}):`, error.message);
-            throw error;
-        }
-    }
-    
-    // 6. Atualiza APENAS o status (Mantida)
-    static async updateStatus(id, newStatus) {
-        let updateFields = [`status = $1`, `updated_at = CURRENT_TIMESTAMP`];
-        const values = [newStatus];
-        if (newStatus === 'Ganho') {
-            updateFields.push(`date_won = COALESCE(date_won, CURRENT_TIMESTAMP)`);
-        } else if (newStatus !== 'Ganho') {
-            updateFields.push(`date_won = NULL`);
-        }
-        const query = `
-            UPDATE leads
-            SET ${updateFields.join(', ')}
-            WHERE id = $${values.length + 1}
-            RETURNING *;
-        `;
+    // 5. Atualiza um Lead (Mantida)
+    static async update(id, fields) {
+        let query = 'UPDATE leads SET ';
+        const values = [];
+        let valueIndex = 1;
+        const keys = Object.keys(fields);
+        keys.forEach((key, index) => {
+            query += `${key} = $${valueIndex}`;
+            values.push(fields[key]);
+            valueIndex++;
+            if (index < keys.length - 1) {
+                query += ', ';
+            }
+        });
+        query += `, updated_at = CURRENT_TIMESTAMP WHERE id = $${valueIndex} RETURNING *;`;
         values.push(id);
         try {
             const result = await pool.query(query, values);
             return result.rows[0] || null;
         } catch (error) {
-            console.error('Erro no modelo ao atualizar status do lead:', error);
+            console.error('Erro no modelo ao atualizar lead:', error);
             throw error;
         }
     }
-    
-    // 7. Exclui Lead (Mantida)
-    static async delete(id) { 
-        const query = 'DELETE FROM leads WHERE id = $1 RETURNING id';
+
+    // 6. Exclui um Lead (Mantida)
+    static async delete(id) {
+        const query = 'DELETE FROM leads WHERE id = $1 RETURNING *;';
         try {
             const result = await pool.query(query, [id]);
             return result.rows.length > 0;
@@ -226,17 +171,25 @@ class Lead {
             throw error;
         }
     }
-    
-    // =============================================================
-    // FUNÇÕES PARA RELATÓRIOS (Modularizadas para Performance)
-    // =============================================================
-    
-    // [A] Métrica Rápida: Contagens e Valores Simples
+
+    // 7. Lista Usuários para Reatribuição (Mantida)
+    static async getUsersForReassignment() {
+        const query = 'SELECT id, name FROM users WHERE role = \'sales\' OR role = \'admin\' ORDER BY name;';
+        try {
+            const result = await pool.query(query);
+            return result.rows;
+        } catch (error) {
+            console.error('Erro no modelo ao buscar usuários para reatribuição:', error);
+            throw error;
+        }
+    }
+
+    // 8. Dashboard Métricas Simples (Isolada)
     static async getSimpleMetrics(baseCondition, values) {
         const query = `
-            SELECT
-                COUNT(id) AS total_leads,
-                COUNT(CASE WHEN status NOT IN ('Perdido', 'Ganho') THEN 1 END) AS active_leads,
+            SELECT 
+                COUNT(*) AS total_leads,
+                COUNT(CASE WHEN status NOT IN ('Ganho', 'Perdido') THEN 1 END) AS active_leads,
                 COUNT(CASE WHEN status = 'Ganho' THEN 1 END) AS total_won_leads,
                 COALESCE(SUM(CASE 
                     WHEN status IN ('Em Negociação', 'Proposta Enviada') 
@@ -255,7 +208,7 @@ class Lead {
         }
     }
     
-    // [B] Métrica Lenta: Tempo Médio de Resposta/Fechamento (Isolada)
+    // 9. Métrica Lenta: Tempo Médio de Resposta/Fechamento (Isolada)
     static async getTimeMetrics(baseCondition, values) {
         const query = `
             SELECT
@@ -282,7 +235,7 @@ class Lead {
         }
     }
 
-    // [C] Funil de Vendas
+    // 10. Funil de Vendas
     static async getFunnelData(baseCondition, values) {
         const query = `
             SELECT status, COUNT(*) AS count
@@ -300,17 +253,15 @@ class Lead {
         }
     }
 
-    // [D] Performance por Vendedor (Aceita baseCondition com ou sem prefixo 'l.')
+    // 11. Performance por Vendedor
     static async getSellerPerformance(baseCondition, values) {
-        // CRÍTICO: Usamos LEFT JOIN para garantir que todos os vendedores apareçam, mesmo sem leads.
-        // O filtro ${baseCondition} deve usar o prefixo 'l.' (e o controller passará o filtro correto).
         const query = `
             SELECT 
                 u.name AS seller_name, 
                 COUNT(l.id) AS total_leads, 
-                COALESCE(SUM(CASE WHEN l.status = 'Ganho' THEN 1 ELSE 0 END), 0) AS won_leads,
+                SUM(CASE WHEN l.status = 'Ganho' THEN 1 ELSE 0 END) AS won_leads,
                 COALESCE(AVG(EXTRACT(EPOCH FROM (l.date_won - l.created_at)) / 86400) FILTER (WHERE l.status = 'Ganho' AND l.date_won IS NOT NULL), 0) AS avg_time_to_close,
-                COALESCE(SUM(CASE WHEN l.status NOT IN ('Ganho', 'Perdido') THEN 1 ELSE 0 END), 0) AS active_leads
+                SUM(CASE WHEN l.status NOT IN ('Ganho', 'Perdido') THEN 1 ELSE 0 END) AS active_leads
             FROM users u
             LEFT JOIN leads l ON l.owner_id = u.id AND ${baseCondition}
             GROUP BY u.name
@@ -325,7 +276,7 @@ class Lead {
         }
     }
     
-    // [E] Razões de Perda
+    // 12. Razões de Perda
     static async getLossReasons(baseCondition, values) {
         const query = `
             SELECT reason_for_loss, COUNT(*) AS count
@@ -343,7 +294,7 @@ class Lead {
         }
     }
     
-    // [F] Análise de Origem (Nova função modular)
+    // 13. Análise de Origem
     static async getOriginAnalysis(baseCondition, values) {
         const query = `
             SELECT 

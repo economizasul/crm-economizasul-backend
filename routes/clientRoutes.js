@@ -1,4 +1,4 @@
-// src/routes/clientRoutes.js
+// routes/clientRoutes.js
 
 const express = require('express');
 const router = express.Router();
@@ -7,7 +7,7 @@ const router = express.Router();
 const ClientController = require('../controllers/ClientController');
 
 // Middleware
-const protect = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware');
 
 // ------------------------------------------------------------------
 // ROTAS DE CLIENTES (CRUD) - TODAS PROTEGIDAS
