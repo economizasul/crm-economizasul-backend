@@ -1,21 +1,37 @@
-// backend/routes/userRoutes.js
+// routes/users.js (CORRIGIDO)
 
 const express = require('express');
 const router = express.Router();
 
-const { searchUser, updateUser } = require('../controllers/userController');
-// CRÍTICO: Assume que authMiddleware existe e tem a função protect
-const { protect } = require('../middleware/authMiddleware'); 
-// CRÍTICO: O middleware de 'protect' deve verificar se o usuário é Admin.
+// ⭐️ CORREÇÃO AQUI: Mudamos de '../controllers/UserController' para '../../controllers/UserController'
+// Assumindo que: 
+// Seu arquivo está em: /src/routes/users.js
+// Seu controller está em: /controllers/UserController.js
+// Subir duas pastas (../..) leva à raiz, onde a pasta 'controllers' existe.
+const UserController = require('../../controllers/UserController'); 
 
-// Rota de busca de usuário por nome ou e-mail
-// É uma rota GET, pois está apenas buscando dados.
-// É protegida por 'protect' para exigir login.
-router.route('/search').get(protect, searchUser);
+// Assumindo que seu middleware está em src/middlewares
+const isAuthenticated = require('../src/middlewares/isAuthenticated'); 
+const isAdministrator = require('../src/middlewares/isAdministrator'); 
 
-// Rota de atualização de usuário por ID
-// É protegida por 'protect' para exigir login.
-router.route('/:id').patch(protect, updateUser);
+// ===================================
+// ROTAS DE GERENCIAMENTO DE USUÁRIOS (CRUD)
+// ===================================
+
+// Rota de criação (POST)
+router.post('/', isAuthenticated, isAdministrator, UserController.createUser);
+
+// Rota de listagem e busca geral (GET /api/users ou /api/users?search=...)
+router.get('/', isAuthenticated, isAdministrator, UserController.getUsers);
+
+// Rota de busca específica (GET /api/users/search?email=...)
+router.get('/search', isAuthenticated, UserController.searchUser);
+
+// Rota de atualização (PUT /api/users/:id)
+router.put('/:id', isAuthenticated, isAdministrator, UserController.updateUser);
+
+// Rota de exclusão (DELETE /api/users/:id)
+router.delete('/:id', isAuthenticated, isAdministrator, UserController.deleteUser);
 
 
 module.exports = router;
