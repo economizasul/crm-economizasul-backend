@@ -3,32 +3,29 @@
 const express = require('express');
 const router = express.Router();
 
-// Middlewares
+// ✅ Middleware de autenticação
 const { protect } = require('../middleware/authMiddleware');
 
-// Controladores
-const {
-    createLead,
-    getAllLeads,
-    updateLead,
-    getUsersForReassignment,
-    deleteLead,
-    getLeadById,
-} = require('../controllers/leadController');
+// ✅ Controller (caminho correto)
+const LeadController = require('../controllers/leadController');
 
-// ROTAS PRINCIPAIS DE LEADS
+// ===================================
+// ROTAS DE LEADS
+// ===================================
+
+// Listar e criar leads
 router.route('/')
-    .get(protect, getAllLeads)
-    .post(protect, createLead);
+  .get(protect, LeadController.getAllLeads)
+  .post(protect, LeadController.createLead);
 
-// ROTAS POR ID
+// Buscar, atualizar e deletar lead por ID
 router.route('/:id')
-    .put(protect, updateLead)
-    .get(protect, getLeadById)
-    .delete(protect, deleteLead);
+  .get(protect, LeadController.getLeadById)
+  .put(protect, LeadController.updateLead)
+  .delete(protect, LeadController.deleteLead);
 
-// ROTA PARA BUSCAR USUÁRIOS PARA REATRIBUIÇÃO
+// Buscar usuários para reatribuição (transferência)
 router.route('/users/reassignment')
-    .get(protect, getUsersForReassignment);
+  .get(protect, LeadController.getUsersForReassignment);
 
 module.exports = router;
