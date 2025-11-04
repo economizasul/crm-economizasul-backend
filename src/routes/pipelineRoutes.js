@@ -1,12 +1,15 @@
-// routes/pipelineRoutes.js
+// src/routes/pipelineRoutes.js
 
 const express = require('express');
 const router = express.Router();
-const PipelineController = require('../src/controllers/PipelineController');
+
+// Controlador
+const PipelineController = require('../controllers/PipelineController');
+
+// Middleware
 const { protect } = require('../middleware/authMiddleware');
 
-// Rota para promover um Lead (com um ID específico) a Cliente
-// O método é POST, pois cria um novo registro em outra tabela (Clients)
+// ROTA PARA PROMOVER UM LEAD A CLIENTE
 router.post('/promote/:leadId', protect, PipelineController.promoteToClient);
 
 module.exports = router;

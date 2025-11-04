@@ -1,33 +1,34 @@
-// routes/leadRoutes.js
+// src/routes/leadRoutes.js
 
 const express = require('express');
 const router = express.Router();
-// O middleware 'protect' é essencial para garantir autenticação e req.user
-const { protect } = require('../middleware/authMiddleware'); 
 
-const { 
-    createLead, 
-    getAllLeads, 
-    updateLead, 
-    // 💡 NOVO: Importa a função de listar usuários
-    getUsersForReassignment, 
-    deleteLead, 
+// Middlewares
+const { protect } = require('../middleware/authMiddleware');
+
+// Controladores
+const {
+    createLead,
+    getAllLeads,
+    updateLead,
+    getUsersForReassignment,
+    deleteLead,
     getLeadById,
-} = require('../src/controllers/leadController');
+} = require('../controllers/leadController');
 
-// Rotas principais de Leads
+// ROTAS PRINCIPAIS DE LEADS
 router.route('/')
-    .get(protect, getAllLeads) 
-    .post(protect, createLead); 
+    .get(protect, getAllLeads)
+    .post(protect, createLead);
 
-// Rotas por ID
+// ROTAS POR ID
 router.route('/:id')
-    .put(protect, updateLead) // Rota PUT para atualização
+    .put(protect, updateLead)
     .get(protect, getLeadById)
-    .delete(protect, deleteLead); 
+    .delete(protect, deleteLead);
 
-// 💡 NOVO: Rota para buscar usuários para a função de transferência (Reatribuição)
+// ROTA PARA BUSCAR USUÁRIOS PARA REATRIBUIÇÃO
 router.route('/users/reassignment')
-    .get(protect, getUsersForReassignment); // Adicione um middleware de autorização (e.g., isAdmin) se desejar restringir
+    .get(protect, getUsersForReassignment);
 
 module.exports = router;
