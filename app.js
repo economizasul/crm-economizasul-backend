@@ -44,8 +44,8 @@ app.use(history({
 }));
 app.use(express.static(frontendPath));
 
-// CORREÇÃO: ROTA * CORRETA
-app.get('*', (req, res) => {
+// CORREÇÃO FINAL: ROTA WILDCARD COM app.use()
+app.use((req, res) => {
   if (req.path.startsWith('/api')) {
     return res.status(404).json({ error: 'Rota não encontrada' });
   }
