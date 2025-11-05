@@ -24,7 +24,6 @@ class ConfigController {
       `);
       res.json(result.rows);
     } catch (err) {
-      console.error('Erro ao listar vendedores:', err);
       res.status(500).json({ error: 'Erro ao carregar usuários' });
     }
   }
@@ -69,7 +68,6 @@ class ConfigController {
 
       res.json(result.rows[0]);
     } catch (err) {
-      console.error('Erro ao atualizar permissões:', err);
       res.status(500).json({ error: 'Erro ao salvar permissões' });
     }
   }
