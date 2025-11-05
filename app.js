@@ -37,10 +37,18 @@ app.use("/api/v1/configuracoes", require('./routes/configuracoes'));
 
 // SPA (React)
 const frontendPath = path.join(__dirname, 'dist');
-app.use(history({ rewrites: [{ from: /^\/api\/v1\/.*$/, to: ctx => ctx.parsedUrl.pathname }] }));
+app.use(history({
+  rewrites: [
+    { from: /^\/api\/v1\/.*$/, to: ctx => ctx.parsedUrl.pathname }
+  ]
+}));
 app.use(express.static(frontendPath));
+
+// CORREÇÃO: ROTA * CORRETA
 app.get('*', (req, res) => {
-  if (req.path.startsWith('/api')) return res.status(404).json({ error: 'Rota não encontrada' });
+  if (req.path.startsWith('/api')) {
+    return res.status(404).json({ error: 'Rota não encontrada' });
+  }
   res.sendFile(path.join(frontendPath, 'index.html'));
 });
 
