@@ -1,10 +1,9 @@
 // controllers/leadController.js
 
-// ⭐️ CORRIGIDO: Caminho ajustado para a nova estrutura (../)
-const { pool } = require('../config/db');
+// ⭐️ CORREÇÃO: Caminhos revertidos para o padrão '../../' para evitar erros de deploy
+const { pool } = require('../../config/db'); 
 const axios = require('axios');
-// ⭐️ CORRIGIDO: Caminho ajustado para a nova estrutura (../)
-const Lead = require('../models/Lead'); 
+const Lead = require('../../models/Lead'); 
 
 // ===========================
 // 🛠️ Função auxiliar para formatar um lead
