@@ -1,29 +1,25 @@
 // routes/leadRoutes.js
-
 const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 
-const { 
-  createLead, 
-  getAllLeads, 
-  updateLead, 
-  getUsersForReassignment, 
-  deleteLead, 
-  getLeadById 
-} = require('../controllers/leadController');
+const LeadController = require('../controllers/leadController');
 
-// Rotas
+router.use(protect);
+
 router.route('/')
-    .get(protect, getAllLeads)
-    .post(protect, createLead);
+  .get(LeadController.getLeads)
+  .post(LeadController.createLead);
 
 router.route('/:id')
-    .get(protect, getLeadById)
-    .put(protect, updateLead)
-    .delete(protect, deleteLead);
+  .get(LeadController.getLeadById)
+  .put(LeadController.updateLead)
+  .delete(LeadController.deleteLead);
 
 router.route('/users/reassignment')
-    .get(protect, getUsersForReassignment);
+  .get(LeadController.getUsersForReassignment);
+
+router.route('/:id/reassign')
+  .put(LeadController.reassignLead);
 
 module.exports = router;
