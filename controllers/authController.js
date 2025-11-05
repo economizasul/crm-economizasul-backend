@@ -1,5 +1,6 @@
 // controllers/authController.js
 
+// ⭐️ CORRIGIDO: Caminho ajustado para a nova estrutura (../)
 const { pool } = require('../config/db'); 
 const bcrypt = require('bcryptjs'); 
 const jwt = require('jsonwebtoken');
@@ -37,42 +38,34 @@ const registerUser = async (req, res) => {
         const userExists = await pool.query('SELECT id FROM users WHERE email = $1', [email]);
 
         if (userExists.rows.length > 0) {
-            return res.status(400).json({ error: 'Usuário já existe.' });
+            return res.status(409).json({ error: 'E-mail já está em uso.' });
         }
 
-        // 2. Hash da senha
+        // 2. Hash da Senha
         const salt = await bcrypt.genSalt(10);
         const hashedPassword = await bcrypt.hash(password, salt);
-        
-        // 3. Inserir novo usuário
-        const userRole = role || 'user'; // 'user' é o padrão
-        
-        const result = await pool.query(
-            'INSERT INTO users (name, email, password, role) VALUES ($1, $2, $3, $4) RETURNING id, name, email, role',
-            [name, email, hashedPassword, userRole]
-        );
 
+        // 3. Inserir novo usuário
+        const insertQuery = `
+            INSERT INTO users (name, email, password, phone, role)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, name, email, role;
+        `;
+        const result = await pool.query(insertQuery, [name, email, hashedPassword, role, role]);
         const newUser = result.rows[0];
 
-        // 4. Resposta de sucesso
-        if (newUser) {
-            res.status(201).json({
-                id: newUser.id,
-                name: newUser.name,
-                email: newUser.email,
-                role: newUser.role,
-                token: generateToken(newUser.id),
-            });
-        } else {
-            res.status(400).json({ error: 'Dados de usuário inválidos.' });
-        }
+        res.status(201).json({
+            ...newUser,
+            token: generateToken(newUser),
+        });
+
     } catch (error) {
         console.error("Erro ao registrar usuário:", error.message);
-        res.status(500).json({ error: 'Erro interno do servidor ao registrar.' });
+        res.status(500).json({ error: 'Erro interno do servidor.' });
     }
 };
 
-// @desc    Autenticar (login) um usuário
+// @desc    Autenticar usuário
 // @route   POST /api/v1/auth/login
 // @access  Public
 const loginUser = async (req, res) => {
@@ -83,23 +76,19 @@ const loginUser = async (req, res) => {
     }
 
     try {
-        // Seleciona explicitamente a coluna 'password'
-        const result = await pool.query('SELECT id, name, email, role, password FROM users WHERE email = $1', [email]);
+        // Seleciona explicitamente a coluna 'password' e as permissões de relatório
+        const result = await pool.query('SELECT id, name, email, role, relatorios_proprios_only, relatorios_todos, transferencia_leads, acesso_configuracoes, password FROM users WHERE email = $1', [email]);
         const user = result.rows[0];
         
         // Verifica se o usuário existe e se a senha corresponde
         if (user && await bcrypt.compare(password, user.password)) {
+            // Remove a senha antes de enviar a resposta
+            const { password, ...userData } = user;
+            
             res.json({
-                id: user.id,
-                name: user.name,
-                email: user.email,
-                role: user.role,
-                relatorios_proprios_only: user.relatorios_proprios_only,
-                relatorios_todos: user.relatorios_todos,
-                transferencia_leads: user.transferencia_leads,
-                acesso_configuracoes: user.acesso_configuracoes,
-                token: generateToken(user), // <- PASSA O USER INTEIRO
-    });
+                ...userData,
+                token: generateToken(userData), // <- PASSA O USER INTEIRO
+            });
         } else {
             // Falha na autenticação (usuário não encontrado ou senha incorreta)
             res.status(401).json({ error: 'Credenciais inválidas.' });
@@ -107,11 +96,10 @@ const loginUser = async (req, res) => {
 
     } catch (error) {
         console.error("Erro ao fazer login:", error.message);
-        res.status(500).json({ error: 'Erro interno do servidor ao fazer login.' });
+        res.status(500).json({ error: 'Erro interno do servidor ao tentar logar.' });
     }
 };
 
-// Exportar como um objeto para evitar o TypeError no deploy
 module.exports = {
     registerUser,
     loginUser,

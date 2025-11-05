@@ -1,12 +1,12 @@
 // controllers/ClientController.js
 
-const Client = require('../models/Client'); // <-- CORRIGIDO: Passa a subir dois níveis (../../)
+// ⭐️ CORRIGIDO: Caminho ajustado para a nova estrutura (../)
+const Client = require('../models/Client'); 
 
 class ClientController {
     // 1. Criar Cliente (POST /api/clients)
     static async createClient(req, res) {
-        // ID temporário 1
-        const owner_id = 1; 
+        const owner_id = req.user.id; // Assume que o owner_id vem do token do usuário logado
         const { name, email, phone } = req.body;
         
         if (!name) {
@@ -42,14 +42,14 @@ class ClientController {
 
         try {
             const client = await Client.findById(id);
-            
+
             if (!client) {
                 return res.status(404).json({ error: "Cliente não encontrado." });
             }
 
             res.status(200).json(client);
         } catch (error) {
-            console.error('Erro ao buscar cliente por ID:', error);
+            console.error('Erro ao buscar cliente:', error);
             res.status(500).json({ error: 'Erro interno do servidor ao buscar cliente.' });
         }
     }

@@ -1,5 +1,6 @@
 // controllers/PipelineController.js
 
+// ⭐️ CORRIGIDO: Caminhos ajustados para a nova estrutura (../)
 const Lead = require('../models/Lead');
 const Client = require('../models/Client');
 
@@ -30,7 +31,8 @@ class PipelineController {
             });
 
             // 4. Atualiza o status do Lead para 'Convertido'
-            await Lead.updateStatus(leadId, 'Convertido');
+            // NOTA: É importante que o `Lead.updateStatus` exista no seu Model
+            await Lead.updateStatus(leadId, 'Convertido'); 
 
             // 5. Retorna o novo Cliente e confirma a operação
             res.status(201).json({
