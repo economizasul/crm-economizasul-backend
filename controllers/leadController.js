@@ -135,7 +135,7 @@ class LeadController {
     try {
       const leads = await Lead.findAll({
         status,
-        ownerId: userRole === 'Admin' && ownerId ? ownerId : currentUserId,
+        ownerId: userRole === 'Admin' ? (ownerId || null) : currentUserId,
         search,
         userRole
       });
