@@ -145,71 +145,69 @@ class LeadController {
 
   // UPDATE COM NOTAS FUNCIONANDO 100%
   async updateLead(req, res) {
-    const { id } = req.params;
-    const { 
-      name, email, phone, document, address, status, origin, 
-      uc, avg_consumption, estimated_savings, qsa, newNote 
-    } = req.body;
+  const { id } = req.params;
+  const { 
+    name, email, phone, document, address, status, origin, 
+    uc, avg_consumption, estimated_savings, qsa, newNote 
+  } = req.body;
 
-    try {
-      const existingLead = await Lead.findById(id);
-      if (!existingLead) return res.status(404).json({ error: 'Lead não encontrado.' });
+  try {
+    const existingLead = await Lead.findById(id);
+    if (!existingLead) return res.status(404).json({ error: 'Lead não encontrado.' });
 
-      if (existingLead.owner_id !== req.user.id && req.user.role !== 'Admin') {
-        return res.status(403).json({ error: 'Acesso negado.' });
-      }
-
-      const updates = {
-        name: name?.trim() || existingLead.name,
-        email: email?.trim() || existingLead.email,
-        phone: phone ? phone.replace(/\D/g, '') : existingLead.phone,
-        document: document?.trim() || existingLead.document,
-        address: address?.trim() || existingLead.address,
-        status: status || existingLead.status,
-        origin: origin?.trim() || existingLead.origin,
-        uc: uc?.trim() || existingLead.uc,
-        avg_consumption: avg_consumption ? parseFloat(avg_consumption) : existingLead.avg_consumption,
-        estimated_savings: estimated_savings ? parseFloat(estimated_savings) : existingLead.estimated_savings,
-        qsa: qsa?.trim() || existingLead.qsa
-      };
-
-      // ADICIONA NOVA NOTA
-      if (newNote?.text?.trim()) {
-        let notes = [];
-        if (existingLead.notes) {
-          try {
-            notes = JSON.parse(existingLead.notes);
-            if (!Array.isArray(notes)) notes = [];
-          } catch (e) {
-            notes = [];
-          }
-        }
-
-        notes.push({
-          text: newNote.text.trim(),
-          timestamp: Date.now(),
-          user: req.user.name || 'Desconhecido'
-        });
-
-        updates.notes = JSON.stringify(notes);
-      }
-
-      const updatedLead = await Lead.update(id, updates);
-      if (!updatedLead) return res.status(404).json({ error: 'Lead não encontrado.' });
-
-      res.json({
-        message: 'Lead atualizado com sucesso!',
-        lead: this.formatLeadResponse(updatedLead)
-      });
-
-    } catch (error) {
-      console.error("Erro ao atualizar lead:", error);
-      res.status(500).json({ 
-        error: 'Erro ao salvar lead.', 
-        details: error.message 
-      });
+    if (existingLead.owner_id !== req.user.id && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Acesso negado.' });
     }
+
+    // MONTA OS CAMPOS COM FALLBACK CORRETO
+    const updates = {
+      name: (name || '').trim() || existingLead.name,
+      email: email?.trim() || existingLead.email,
+      phone: phone ? phone.replace(/\D/g, '') : existingLead.phone,
+      document: (document || '').trim() || existingLead.document,
+      address: (address || '').trim() || existingLead.address, // AGORA SALVA ENDEREÇO VAZIO
+      status: status || existingLead.status,
+      origin: (origin || '').trim() || existingLead.origin,
+      uc: (uc || '').trim() || existingLead.uc,
+      avg_consumption: avg_consumption !== undefined ? (avg_consumption ? parseFloat(avg_consumption) : null) : existingLead.avg_consumption,
+      estimated_savings: estimated_savings !== undefined ? (estimated_savings ? parseFloat(estimated_savings) : null) : existingLead.estimated_savings,
+      qsa: (qsa || '').trim() || existingLead.qsa
+    };
+
+    // ADICIONA NOVA NOTA (SE VIER)
+    if (newNote?.text?.trim()) {
+      let notes = [];
+      if (existingLead.notes) {
+        try {
+          const parsed = JSON.parse(existingLead.notes);
+          if (Array.isArray(parsed)) notes = parsed;
+        } catch (e) {
+          console.warn('JSON de notas corrompido, resetando...');
+        }
+      }
+
+      notes.push({
+        text: newNote.text.trim(),
+        timestamp: Date.now(),
+        user: req.user.name || 'Usuário'
+      });
+
+      updates.notes = JSON.stringify(notes);
+    }
+
+    const updatedLead = await Lead.update(id, updates);
+    if (!updatedLead) return res.status(404).json({ error: 'Erro ao atualizar.' });
+
+    res.json({
+      message: 'Lead atualizado com sucesso!',
+      lead: this.formatLeadResponse(updatedLead)
+    });
+
+  } catch (error) {
+    console.error("Erro ao atualizar lead:", error);
+    res.status(500).json({ error: 'Erro ao salvar lead.', details: error.message });
   }
+}
 
   async deleteLead(req, res) {
     const { id } = req.params;
