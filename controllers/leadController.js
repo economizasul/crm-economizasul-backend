@@ -48,38 +48,84 @@ class LeadController {
   }
 
   async createLead(req, res) {
-    const { name, email, phone, document, address, status, origin, uc, avgConsumption, estimatedSavings } = req.body;
-    const owner_id = req.user.id;
+  const { 
+    name, 
+    email, 
+    phone, 
+    document, 
+    address, 
+    status, 
+    origin, 
+    uc, 
+    avg_consumption, 
+    estimated_savings,
+    qsa,
+    owner_id,
+    notes
+  } = req.body;
 
-    if (!name || !email || !phone) {
-      return res.status(400).json({ error: 'Nome, email e telefone são obrigatórios.' });
-    }
+  // FORÇA O DONO SE NÃO VIER (SEGURANÇA)
+  const finalOwnerId = owner_id || req.user.id;
 
-    try {
-      const leadData = {
-        name,
-        email,
-        phone,
-        document,
-        address,
-        status: status || 'Novo',
-        origin: origin || 'Manual',
-        owner_id,
-        uc,
-        avg_consumption: avgConsumption,
-        estimated_savings: estimatedSavings
-      };
-
-      const newLead = await Lead.create(leadData);
-      res.status(201).json(this.formatLeadResponse(newLead));
-    } catch (error) {
-      console.error("Erro ao criar lead:", error.message);
-      if (error.code === '23505') {
-        return res.status(409).json({ error: 'Este e-mail ou documento já está sendo usado por outro lead.' });
-      }
-      res.status(500).json({ error: 'Erro interno do servidor ao criar lead.' });
-    }
+  // VALIDAÇÃO CORRETA: EMAIL NÃO É OBRIGATÓRIO
+  if (!name || !name.trim()) {
+    return res.status(400).json({ error: 'Nome é obrigatório.' });
   }
+  if (!phone || !phone.replace(/\D/g, '').trim()) {
+    return res.status(400).json({ error: 'Telefone é obrigatório.' });
+  }
+  if (!finalOwnerId) {
+    return res.status(400).json({ error: 'Dono do lead não identificado.' });
+  }
+  if (!origin || !origin.trim()) {
+    return res.status(400).json({ error: 'Origem é obrigatória.' });
+  }
+
+  // LIMPA O TELEFONE
+  const cleanPhone = phone.replace(/\D/g, '');
+  if (cleanPhone.length < 10 || cleanPhone.length > 11) {
+    return res.status(400).json({ error: 'Telefone deve ter 10 ou 11 dígitos.' });
+  }
+
+  try {
+    const leadData = {
+      name: name.trim(),
+      email: email?.trim() || null,
+      phone: cleanPhone,
+      document: document?.trim() || null,
+      address: address?.trim() || null,
+      status: status || 'Novo',
+      origin: origin.trim(),
+      owner_id: finalOwnerId,
+      uc: uc?.trim() || null,
+      avg_consumption: avg_consumption ? parseFloat(avg_consumption) : null,
+      estimated_savings: estimated_savings ? parseFloat(estimated_savings) : null,
+      qsa: qsa?.trim() || null,
+      notes: notes || JSON.stringify([{
+        text: `Lead criado via formulário (Origem: ${origin.trim()})`,
+        timestamp: Date.now(),
+        user: req.user.name || 'Sistema'
+      }])
+    };
+
+    const newLead = await Lead.create(leadData);
+    
+    res.status(201).json({
+      message: 'Lead criado com sucesso!',
+      lead: this.formatLeadResponse(newLead)
+    });
+
+  } catch (error) {
+    console.error("Erro ao criar lead:", error);
+
+    if (error.code === '23505') {
+      const field = error.constraint.includes('email') ? 'e-mail' : 'documento';
+      return res.status(409).json({ error: `Este ${field} já está sendo usado por outro lead.` });
+    }
+
+    res.status(500).json({ error: 'Erro interno do servidor.' });
+  }
+}
 
   async getLeads(req, res) {
     const { status, ownerId, search } = req.query;
