@@ -16,24 +16,42 @@ class ReportController {
   // =============================================================
   // 1. LISTAR VENDEDORES REAIS (coluna "name" da tabela "users")
   // =============================================================
-  async getVendors(req, res) {
-    try {
-      const isAdmin = req.user.role === 'Admin';
-      const query = isAdmin
-        ? `SELECT id, name, email, role FROM users ORDER BY name`
-        : `SELECT id, name, email, role FROM users WHERE id = $1 ORDER BY name`;
+ async getVendors(req, res) {
+  try {
+    const isAdmin = req.user.role === 'Admin';
 
-      const values = isAdmin ? [] : [req.user.id];
-      const result = await pool.query(query, values);
+    // Se o usuário for admin → vê todos; senão → vê apenas ele mesmo.
+    const query = isAdmin
+      ? `
+        SELECT id, name, email, role 
+        FROM users 
+        WHERE role IN ('Admin', 'User', 'Vendedor')
+        ORDER BY name;
+      `
+      : `
+        SELECT id, name, email, role 
+        FROM users 
+        WHERE id = $1
+        ORDER BY name;
+      `;
 
-      return res.status(200).json({ success: true, data: result.rows });
-    } catch (error) {
-      console.error('Erro ao buscar vendedores:', error);
-      return res
-        .status(500)
-        .json({ success: false, message: 'Erro ao buscar vendedores.' });
+    const values = isAdmin ? [] : [req.user.id];
+    const result = await pool.query(query, values);
+
+    if (!result.rows || result.rows.length === 0) {
+      return res.status(404).json({ success: false, message: 'Nenhum vendedor encontrado.' });
     }
+
+    return res.status(200).json({ success: true, data: result.rows });
+  } catch (error) {
+    console.error('❌ Erro ao buscar vendedores:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno do servidor ao buscar vendedores.',
+      details: error.message
+    });
   }
+}
 
   // =============================================================
   // 2. DADOS DO DASHBOARD

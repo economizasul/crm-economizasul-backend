@@ -11,14 +11,17 @@ class ReportDataService {
 
     // Filtro por vendedor
     if (isAdmin) {
-      if (filters.ownerId && filters.ownerId !== 'all') {
-        where.push(`l.owner_id = $${i++}`);
-        params.push(filters.ownerId);
-      }
+  
+        if (filters.ownerId && filters.ownerId !== 'all') {
+            where.push(`l.owner_id = $${i++}`);
+            params.push(filters.ownerId);
+  }
+  // Se for 'all', não adiciona filtro de owner → pega todos os leads
     } else {
-      where.push(`l.owner_id = $${i++}`);
-      params.push(userId);
-    }
+    // Usuário comum vê apenas seus próprios leads
+    where.push(`l.owner_id = $${i++}`);
+    params.push(userId);
+}
 
     // Filtro por datas
     if (filters.startDate) {
