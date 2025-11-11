@@ -24,7 +24,6 @@ class LeadController {
           notesArray = parsed.filter(note => note && note.text);
         }
       } catch (e) {
-        // Se JSON estiver corrompido, tenta salvar como texto simples
         notesArray = [{ 
           text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida', 
           timestamp: Date.now(),
@@ -92,7 +91,7 @@ class LeadController {
         avg_consumption: avg_consumption ? parseFloat(avg_consumption) : null,
         estimated_savings: estimated_savings ? parseFloat(estimated_savings) : null,
         qsa: qsa?.trim() || null,
-        notes: JSON.stringify([initialNote]) // NOTA AUTOMÁTICA
+        notes: JSON.stringify([initialNote])
       };
 
       const newLead = await Lead.create(leadData);
@@ -143,71 +142,81 @@ class LeadController {
     }
   }
 
-  // UPDATE COM NOTAS FUNCIONANDO 100%
+  // UPDATE 100% FUNCIONAL: RETORNA LEAD ATUALIZADO
   async updateLead(req, res) {
-  const { id } = req.params;
-  const { 
-    name, email, phone, document, address, status, origin, 
-    uc, avg_consumption, estimated_savings, qsa, newNote 
-  } = req.body;
+    const { id } = req.params;
+    const { 
+      name, email, phone, document, address, status, origin, 
+      uc, avg_consumption, estimated_savings, qsa, newNote, owner_id 
+    } = req.body;
 
-  try {
-    const existingLead = await Lead.findById(id);
-    if (!existingLead) return res.status(404).json({ error: 'Lead não encontrado.' });
+    try {
+      const existingLead = await Lead.findById(id);
+      if (!existingLead) return res.status(404).json({ error: 'Lead não encontrado.' });
 
-    if (existingLead.owner_id !== req.user.id && req.user.role !== 'Admin') {
-      return res.status(403).json({ error: 'Acesso negado.' });
-    }
-
-    // MONTA OS CAMPOS COM FALLBACK CORRETO
-    const updates = {
-      name: (name || '').trim() || existingLead.name,
-      email: email?.trim() || existingLead.email,
-      phone: phone ? phone.replace(/\D/g, '') : existingLead.phone,
-      document: (document || '').trim() || existingLead.document,
-      address: (address || '').trim() || existingLead.address, // AGORA SALVA ENDEREÇO VAZIO
-      status: status || existingLead.status,
-      origin: (origin || '').trim() || existingLead.origin,
-      uc: (uc || '').trim() || existingLead.uc,
-      avg_consumption: avg_consumption !== undefined ? (avg_consumption ? parseFloat(avg_consumption) : null) : existingLead.avg_consumption,
-      estimated_savings: estimated_savings !== undefined ? (estimated_savings ? parseFloat(estimated_savings) : null) : existingLead.estimated_savings,
-      qsa: (qsa || '').trim() || existingLead.qsa
-    };
-
-    // ADICIONA NOVA NOTA (SE VIER)
-    if (newNote?.text?.trim()) {
-      let notes = [];
-      if (existingLead.notes) {
-        try {
-          const parsed = JSON.parse(existingLead.notes);
-          if (Array.isArray(parsed)) notes = parsed;
-        } catch (e) {
-          console.warn('JSON de notas corrompido, resetando...');
-        }
+      if (existingLead.owner_id !== req.user.id && req.user.role !== 'Admin') {
+        return res.status(403).json({ error: 'Acesso negado.' });
       }
 
-      notes.push({
-        text: newNote.text.trim(),
-        timestamp: Date.now(),
-        user: req.user.name || 'Usuário'
+      const updates = {
+        name: (name || '').trim() || existingLead.name,
+        email: email?.trim() || existingLead.email,
+        phone: phone ? phone.replace(/\D/g, '') : existingLead.phone,
+        document: (document || '').trim() || existingLead.document,
+        address: (address || '').trim() || existingLead.address,
+        status: status || existingLead.status,
+        origin: (origin || '').trim() || existingLead.origin,
+        uc: (uc || '').trim() || existingLead.uc,
+        avg_consumption: avg_consumption !== undefined ? (avg_consumption ? parseFloat(avg_consumption) : null) : existingLead.avg_consumption,
+        estimated_savings: estimated_savings !== undefined ? (estimated_savings ? parseFloat(estimated_savings) : null) : existingLead.estimated_savings,
+        qsa: (qsa || '').trim() || existingLead.qsa
+      };
+
+      // ATUALIZA owner_id SE FOR ENVIADO
+      if (owner_id !== undefined) {
+        updates.owner_id = parseInt(owner_id, 10);
+      }
+
+      // ADICIONA NOVA NOTA
+      if (newNote?.text?.trim()) {
+        let notes = [];
+        if (existingLead.notes) {
+          try {
+            const parsed = JSON.parse(existingLead.notes);
+            if (Array.isArray(parsed)) notes = parsed;
+          } catch (e) {
+            console.warn('JSON de notas corrompido, resetando...');
+          }
+        }
+
+        notes.push({
+          text: newNote.text.trim(),
+          timestamp: Date.now(),
+          user: req.user.name || 'Usuário'
+        });
+
+        updates.notes = JSON.stringify(notes);
+      }
+
+      // FAZ O UPDATE
+      await Lead.update(id, updates);
+
+      // BUSCA O LEAD ATUALIZADO (OBRIGATÓRIO)
+      const updatedLead = await Lead.findById(id);
+      if (!updatedLead) {
+        return res.status(500).json({ error: 'Erro ao buscar lead atualizado.' });
+      }
+
+      res.status(200).json({
+        message: 'Lead atualizado com sucesso!',
+        lead: this.formatLeadResponse(updatedLead)
       });
 
-      updates.notes = JSON.stringify(notes);
+    } catch (error) {
+      console.error("Erro ao atualizar lead:", error);
+      res.status(500).json({ error: 'Erro ao salvar lead.', details: error.message });
     }
-
-    const updatedLead = await Lead.update(id, updates);
-    if (!updatedLead) return res.status(404).json({ error: 'Erro ao atualizar.' });
-
-    res.json({
-      message: 'Lead atualizado com sucesso!',
-      lead: this.formatLeadResponse(updatedLead)
-    });
-
-  } catch (error) {
-    console.error("Erro ao atualizar lead:", error);
-    res.status(500).json({ error: 'Erro ao salvar lead.', details: error.message });
   }
-}
 
   async deleteLead(req, res) {
     const { id } = req.params;
@@ -257,9 +266,12 @@ class LeadController {
       if (result.rowCount === 0) {
         return res.status(404).json({ error: 'Lead não encontrado.' });
       }
+
+      const lead = await Lead.findById(id);
+
       res.json({ 
         message: 'Lead reatribuído com sucesso.', 
-        lead: this.formatLeadResponse(result.rows[0]) 
+        lead: this.formatLeadResponse(lead) 
       });
     } catch (error) {
       console.error("Erro ao reatribuir:", error);
