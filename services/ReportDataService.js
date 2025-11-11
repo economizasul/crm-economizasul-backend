@@ -5,65 +5,64 @@ const Lead = require('../models/Lead');
 class ReportDataService {
 
   static buildFilterQuery(filters, userId, isAdmin) {
-    let whereClauses = [];
-    let queryParams = [];
-    let paramIndex = 1;
+    let where = [];
+    let params = [];
+    let i = 1;
 
-    let targetOwnerId = userId;
+    // Filtra por Vendedor (owner_id)
     if (isAdmin) {
-      if (filters.ownerId && filters.ownerId !== 'all') targetOwnerId = filters.ownerId;
-      else if (filters.ownerId === 'all') targetOwnerId = null;
+      if (filters.ownerId && filters.ownerId !== 'all') {
+        where.push(`l.owner_id = $${i++}`);
+        params.push(filters.ownerId);
+      }
+    } else {
+      where.push(`l.owner_id = $${i++}`);
+      params.push(userId);
     }
 
-    if (targetOwnerId !== null) {
-      whereClauses.push(`l.owner_id = $${paramIndex++}`);
-      queryParams.push(targetOwnerId);
-    }
-
-    if (filters.status && filters.status !== 'all') {
-      whereClauses.push(`l.status = $${paramIndex++}`);
-      queryParams.push(filters.status);
-    }
-
+    // Filtro por datas
     if (filters.startDate) {
-      whereClauses.push(`l.created_at >= $${paramIndex++}`);
-      queryParams.push(filters.startDate);
+      where.push(`l.created_at >= $${i++}`);
+      params.push(filters.startDate);
     }
-
     if (filters.endDate) {
       const end = new Date(filters.endDate);
       end.setDate(end.getDate() + 1);
-      whereClauses.push(`l.created_at < $${paramIndex++}`);
-      queryParams.push(end.toISOString().split('T')[0]);
+      where.push(`l.created_at < $${i++}`);
+      params.push(end.toISOString().split('T')[0]);
     }
 
-    return {
-      whereClauses: whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '',
-      queryParams
-    };
+    // Filtro por origem
+    if (filters.source && filters.source !== 'all') {
+      where.push(`l.origin = $${i++}`);
+      params.push(filters.source);
+    }
+
+    const whereSQL = where.length > 0 ? 'WHERE ' + where.join(' AND ') : '';
+    return { whereSQL, params };
   }
 
   static async getDashboardMetrics(filters = {}, userId, isAdmin) {
-    const { whereClauses, queryParams } = this.buildFilterQuery(filters, userId, isAdmin);
+    const { whereSQL, params } = this.buildFilterQuery(filters, userId, isAdmin);
 
     const query = `
       SELECT 
-        l.id, l.status, l.estimated_savings, l.created_at, l.updated_at,
+        l.id, l.status, l.avg_consumption, l.created_at, l.updated_at, 
         u.name AS owner_name
       FROM leads l
-      JOIN users u ON l.owner_id = u.id
-      ${whereClauses}
+      JOIN users u ON u.id = l.owner_id
+      ${whereSQL}
     `;
 
-    const result = await pool.query(query, queryParams);
+    const result = await pool.query(query, params);
     const leads = result.rows;
 
     const totalLeads = leads.length;
-    const leadsActive = leads.filter(l => !['Convertido', 'Perdido'].includes(l.status)).length;
-    const totalWon = leads.filter(l => l.status === 'Convertido');
+    const leadsActive = leads.filter(l => !['Ganho', 'Perdido', 'Fechado'].includes(l.status)).length;
+    const totalWon = leads.filter(l => ['Ganho', 'Convertido'].includes(l.status));
     const totalLost = leads.filter(l => l.status === 'Perdido');
 
-    const totalWonValue = totalWon.reduce((sum, l) => sum + (l.estimated_savings || 0), 0);
+    const totalWonValue = totalWon.reduce((sum, l) => sum + (l.avg_consumption || 0), 0);
     const totalWonCount = totalWon.length;
     const totalLostCount = totalLost.length;
 
@@ -86,26 +85,26 @@ class ReportDataService {
         leadsActive,
         totalWonCount,
         totalLostCount,
-        totalWonValue,
+        totalWonValue, // agora soma avg_consumption (KW)
         conversionRate,
         lossRate,
-        avgClosingTimeDays
-      }
+        avgClosingTimeDays,
+      },
     };
   }
 
   static async getLeadsForExport(filters = {}, userId, isAdmin) {
-    const { whereClauses, queryParams } = this.buildFilterQuery(filters, userId, isAdmin);
+    const { whereSQL, params } = this.buildFilterQuery(filters, userId, isAdmin);
     const query = `
       SELECT 
-        l.id, l.name, l.email, l.phone, l.status, l.origin, l.estimated_savings, l.created_at,
-        u.name AS owner_name
+        l.id, l.name, l.phone, l.email, l.status, l.origin, 
+        l.avg_consumption, l.created_at, u.name AS owner_name
       FROM leads l
-      JOIN users u ON l.owner_id = u.id
-      ${whereClauses}
+      JOIN users u ON u.id = l.owner_id
+      ${whereSQL}
       ORDER BY l.created_at DESC
     `;
-    const result = await pool.query(query, queryParams);
+    const result = await pool.query(query, params);
     return result.rows;
   }
 
@@ -113,16 +112,12 @@ class ReportDataService {
     const lead = await Lead.findById(leadId);
     if (!lead) return null;
 
-    let notesArray = [];
     try {
-      notesArray = Array.isArray(JSON.parse(lead.notes))
-        ? JSON.parse(lead.notes).filter(n => n && n.text)
-        : [];
+      const parsed = JSON.parse(lead.notes || '[]');
+      return Array.isArray(parsed) ? parsed : [];
     } catch {
-      notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
+      return [];
     }
-
-    return notesArray;
   }
 }
 
