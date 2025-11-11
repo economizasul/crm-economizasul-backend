@@ -6,7 +6,7 @@ const ExcelJS = require('exceljs');
 
 class ReportController {
   constructor() {
-    this.getVendors = this.getVendors.bind(this);
+    this.getSellers = this.getSellers.bind(this);
     this.getReportData = this.getReportData.bind(this);
     this.getAnalyticNotes = this.getAnalyticNotes.bind(this);
     this.exportCsv = this.exportCsv.bind(this);
@@ -14,13 +14,13 @@ class ReportController {
   }
 
   // =============================================================
-  // 1️⃣  LISTAR VENDEDORES REAIS (tabela users)
+  // 1️⃣ LISTAR VENDEDORES REAIS (tabela users)
   // =============================================================
-  async getVendors(req, res) {
+  async getSellers(req, res) {
     try {
-      // Verifica se req.user existe, senão assume Admin para evitar erro
-      const isAdmin = req.user?.role === 'Admin' || !req.user;
+      const isAdmin = req.user?.role === 'Admin' || false;
 
+      // Admin vê todos; vendedor comum vê apenas ele mesmo
       const query = isAdmin
         ? `SELECT id, name, email, role FROM users ORDER BY name;`
         : `SELECT id, name, email, role FROM users WHERE id = $1 ORDER BY name;`;
@@ -29,24 +29,22 @@ class ReportController {
       const result = await pool.query(query, values);
 
       if (!result.rows || result.rows.length === 0) {
-        console.warn('⚠️ Nenhum vendedor encontrado na tabela users.');
         return res.status(200).json({ success: true, data: [] });
       }
 
-      console.log('✅ Vendedores retornados:', result.rows.length);
-      return res.status(200).json({ success: true, data: result.rows });
+      res.status(200).json({ success: true, data: result.rows });
     } catch (error) {
       console.error('❌ Erro ao buscar vendedores:', error);
-      return res.status(500).json({
+      res.status(500).json({
         success: false,
-        message: 'Erro ao buscar vendedores.',
+        message: 'Erro interno ao buscar vendedores.',
         details: error.message
       });
     }
   }
 
   // =============================================================
-  // 2️⃣  DADOS DO DASHBOARD
+  // 2️⃣ DADOS DO DASHBOARD
   // =============================================================
   async getReportData(req, res) {
     try {
@@ -66,7 +64,7 @@ class ReportController {
   }
 
   // =============================================================
-  // 3️⃣  NOTAS ANALÍTICAS
+  // 3️⃣ NOTAS ANALÍTICAS
   // =============================================================
   async getAnalyticNotes(req, res) {
     try {
@@ -80,7 +78,7 @@ class ReportController {
   }
 
   // =============================================================
-  // 4️⃣  EXPORTAÇÃO CSV
+  // 4️⃣ EXPORTAÇÃO CSV
   // =============================================================
   async exportCsv(req, res) {
     try {
@@ -133,7 +131,7 @@ class ReportController {
   }
 
   // =============================================================
-  // 5️⃣  EXPORTAÇÃO PDF
+  // 5️⃣ EXPORTAÇÃO PDF
   // =============================================================
   async exportPdf(req, res) {
     try {

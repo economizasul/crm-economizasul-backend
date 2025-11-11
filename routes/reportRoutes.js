@@ -4,10 +4,10 @@ const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 const ReportController = require('../controllers/ReportController');
 
-// 🔒 Protege todas as rotas
+// 🔒 Todas as rotas protegidas
 router.use(protect);
 
-// 👥 Rota para buscar vendedores reais (usada pela tela de relatórios)
+// 👥 Rota correta para listar vendedores reais
 router.get('/sellers', ReportController.getSellers);
 
 // 📊 Dashboard principal
