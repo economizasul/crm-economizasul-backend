@@ -13,78 +13,96 @@ class ReportController {
     this.exportPdf = this.exportPdf.bind(this);
   }
 
-  // GET /api/v1/reports/sellers  (retorna array simples, sem wrapper)
+  // =============================================================
+  // 1️⃣ LISTAR VENDEDORES (coluna "name" da tabela users)
+  // =============================================================
   async getVendors(req, res) {
     try {
       const isAdmin = req.user?.role === 'Admin';
+
       const query = isAdmin
-        ? `SELECT id, name, email, role FROM users ORDER BY name`
-        : `SELECT id, name, email, role FROM users WHERE id = $1 ORDER BY name`;
+        ? `
+          SELECT id, name, email, role
+          FROM users
+          WHERE role IN ('Admin', 'User', 'Vendedor')
+          ORDER BY name;
+        `
+        : `
+          SELECT id, name, email, role
+          FROM users
+          WHERE id = $1
+          ORDER BY name;
+        `;
+
       const values = isAdmin ? [] : [req.user.id];
       const result = await pool.query(query, values);
-      // Retorna array direto (frontend espera array)
-      return res.status(200).json(result.rows || []);
+
+      if (!result.rows || result.rows.length === 0) {
+        console.warn('⚠️ Nenhum vendedor encontrado na tabela users.');
+        return res.status(200).json({ success: true, data: [] });
+      }
+
+      // ✅ MANTÉM o formato { success: true, data: [...] }
+      return res.status(200).json({ success: true, data: result.rows });
     } catch (error) {
-      console.error('Erro ao buscar vendedores:', error);
-      return res.status(500).json({ error: 'Erro ao buscar vendedores.' });
+      console.error('❌ Erro ao buscar vendedores:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro ao buscar vendedores.',
+        details: error.message,
+      });
     }
   }
 
-  // GET/POST /api/v1/reports  -> aceita query params simples: startDate,endDate,ownerId,source
+  // =============================================================
+  // 2️⃣ DADOS DO DASHBOARD (com filtros do frontend)
+  // =============================================================
   async getReportData(req, res) {
     try {
-      // Aceita filtros por query ou body (compatível com chamadas GET e POST)
-      const source = req.query.source ?? req.body.source;
-      const startDate = req.query.startDate ?? req.body.startDate;
-      const endDate = req.query.endDate ?? req.body.endDate;
-      const ownerId = req.query.ownerId ?? req.body.ownerId ?? (req.user?.id || null);
-
-      const filters = {
-        source: source ?? 'all',
-        startDate: startDate || null,
-        endDate: endDate || null,
-        ownerId: ownerId == null ? 'all' : ownerId
-      };
-
+      const filters = req.body.filters || req.query || {};
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
+      // Chama o serviço com os filtros
       const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
 
-      // Retorna diretamente o objeto esperado pelo frontend (sem nested wrappers)
-      return res.status(200).json(metrics);
-
+      // ✅ Retorna estrutura que o frontend espera
+      return res.status(200).json({ success: true, data: metrics });
     } catch (error) {
       console.error('Erro ao buscar dados do dashboard:', error);
-      return res.status(500).json({ error: 'Erro interno ao buscar dados do dashboard.' });
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno ao buscar dados do dashboard.',
+      });
     }
   }
 
+  // =============================================================
+  // 3️⃣ NOTAS ANALÍTICAS
+  // =============================================================
   async getAnalyticNotes(req, res) {
     try {
       const { leadId } = req.params;
       const notes = await ReportDataService.getAnalyticNotes(leadId);
-      return res.status(200).json(notes || []);
+      return res.status(200).json({ success: true, data: notes || [] });
     } catch (error) {
       console.error('Erro ao buscar notas analíticas:', error);
-      return res.status(500).json({ error: 'Erro ao buscar notas analíticas.' });
+      res.status(500).json({ success: false, message: 'Erro interno ao buscar notas.' });
     }
   }
 
+  // =============================================================
+  // 4️⃣ EXPORTAÇÃO CSV
+  // =============================================================
   async exportCsv(req, res) {
     try {
-      const source = req.query.source ?? req.body.source;
-      const startDate = req.query.startDate ?? req.body.startDate;
-      const endDate = req.query.endDate ?? req.body.endDate;
-      const ownerId = req.query.ownerId ?? req.body.ownerId ?? (req.user?.id || null);
-
-      const filters = { source: source ?? 'all', startDate: startDate || null, endDate: endDate || null, ownerId: ownerId == null ? 'all' : ownerId };
+      const filters = req.body.filters || req.query.filters || {};
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
       const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
-      if (!leads || leads.length === 0) {
-        return res.status(404).json({ error: 'Nenhum lead encontrado para exportação.' });
+      if (leads.length === 0) {
+        return res.status(404).json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
       }
 
       const workbook = new ExcelJS.Workbook();
@@ -98,11 +116,11 @@ class ReportController {
         { header: 'Status', key: 'status', width: 15 },
         { header: 'Origem', key: 'origin', width: 15 },
         { header: 'Proprietário', key: 'owner_name', width: 25 },
-        { header: 'Consumo Médio (KW)', key: 'avg_consumption', width: 20 },
-        { header: 'Data de Criação', key: 'created_at', width: 20 }
+        { header: 'Consumo Médio (KW)', key: 'avg_consumption', width: 25 },
+        { header: 'Data de Criação', key: 'created_at', width: 20 },
       ];
 
-      leads.forEach(lead => {
+      leads.forEach((lead) => {
         sheet.addRow({
           id: lead.id,
           name: lead.name,
@@ -112,62 +130,82 @@ class ReportController {
           origin: lead.origin,
           owner_name: lead.owner_name,
           avg_consumption: lead.avg_consumption || 0,
-          created_at: new Date(lead.created_at).toLocaleString('pt-BR')
+          created_at: new Date(lead.created_at).toLocaleDateString('pt-BR'),
         });
       });
 
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=leads_${new Date().toISOString().slice(0,10)}.csv`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=leads_${new Date().toISOString().slice(0, 10)}.csv`
+      );
       await workbook.csv.write(res);
       res.end();
     } catch (error) {
       console.error('Erro ao exportar CSV:', error);
-      res.status(500).json({ error: 'Erro ao gerar CSV.' });
+      res.status(500).json({ success: false, message: 'Erro interno ao gerar CSV.' });
     }
   }
 
+  // =============================================================
+  // 5️⃣ EXPORTAÇÃO PDF
+  // =============================================================
   async exportPdf(req, res) {
     try {
-      const source = req.query.source ?? req.body.source;
-      const startDate = req.query.startDate ?? req.body.startDate;
-      const endDate = req.query.endDate ?? req.body.endDate;
-      const ownerId = req.query.ownerId ?? req.body.ownerId ?? (req.user?.id || null);
-
-      const filters = { source: source ?? 'all', startDate: startDate || null, endDate: endDate || null, ownerId: ownerId == null ? 'all' : ownerId };
+      const filters = req.body.filters || req.query.filters || {};
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
       const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
       const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
-      const prod = metrics.productivity || {};
+      const prod = metrics.productivity;
 
       const doc = new pdfKit();
-      const chunks = [];
-      doc.on('data', c => chunks.push(c));
+      const pdfData = [];
+      doc.on('data', (chunk) => pdfData.push(chunk));
       doc.on('end', () => {
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=relatorio_${new Date().toISOString().slice(0,10)}.pdf`);
-        res.send(Buffer.concat(chunks));
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename=relatorio_${new Date().toISOString().slice(0, 10)}.pdf`
+        );
+        res.send(Buffer.concat(pdfData));
       });
 
-      doc.fontSize(20).text('Relatório CRM', { align: 'left' });
-      doc.moveDown();
-      doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
-      doc.moveDown();
+      doc.fontSize(25).text('Relatório CRM - EconomizaSul', 50, 50);
+      doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 50, 80);
+      doc.moveDown(2);
 
-      doc.fontSize(14).text('Métricas principais:');
+      doc.fontSize(18).text('Métricas de Produtividade', 50, doc.y);
       doc.moveDown(0.5);
-      doc.fontSize(12).text(`Leads Ativos: ${ (prod.leadsActive || 0).toLocaleString('pt-BR') }`);
-      doc.text(`Vendas Concluídas: ${ (prod.totalWonCount || 0).toLocaleString('pt-BR') }`);
-      doc.text(`Valor Total (kW): ${ (prod.totalWonValueKW || 0).toFixed(2).replace('.', ',') } kW`);
-      doc.text(`Taxa de Conversão: ${ ((prod.conversionRate || 0) * 100).toFixed(2).replace('.', ',') }%`);
-      doc.text(`Tempo Médio de Fechamento: ${ (prod.avgClosingTimeDays || 0).toFixed(1).replace('.', ',') } dias`);
+
+      const tableData = [
+        ['Métrica', 'Valor'],
+        ['Leads Ativos', prod.leadsActive.toLocaleString('pt-BR')],
+        ['Vendas Concluídas (Qtd)', prod.totalWonCount.toLocaleString('pt-BR')],
+        ['Valor Total (KW)', `${prod.totalWonValueKW.toFixed(2).replace('.', ',')} kW`],
+        ['Taxa de Conversão', `${(prod.conversionRate * 100).toFixed(2).replace('.', ',')}%`],
+        ['Taxa de Perda', `${(prod.lossRate * 100).toFixed(2).replace('.', ',')}%`],
+        ['Tempo Médio de Fechamento', `${prod.avgClosingTimeDays.toFixed(1)} dias`],
+      ];
+
+      let y = doc.y;
+      doc.font('Helvetica-Bold');
+      doc.text('Métrica', 50, y, { width: 250 });
+      doc.text('Valor', 350, y);
+      y += 20;
+
+      doc.font('Helvetica');
+      tableData.slice(1).forEach((row) => {
+        doc.text(row[0], 50, y, { width: 250 });
+        doc.text(row[1], 350, y);
+        y += 15;
+      });
 
       doc.end();
-
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
-      res.status(500).json({ error: 'Erro ao gerar PDF.' });
+      res.status(500).json({ success: false, message: 'Erro interno ao gerar PDF.' });
     }
   }
 }
