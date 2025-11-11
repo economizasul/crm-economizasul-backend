@@ -10,48 +10,48 @@ class ReportController {
     this.getAnalyticNotes = this.getAnalyticNotes.bind(this);
     this.exportCsv = this.exportCsv.bind(this);
     this.exportPdf = this.exportPdf.bind(this);
-    this.getVendors = this.getVendors.bind(this);
+    this.getSellers = this.getSellers.bind(this);
   }
 
   // =============================================================
-  // 1. LISTAR VENDEDORES REAIS (coluna "name" da tabela "users")
+  // 1. LISTAR VENDEDORES REAIS (tabela "users")
   // =============================================================
- async getVendors(req, res) {
-  try {
-    const isAdmin = req.user.role === 'Admin';
+  async getSellers(req, res) {
+    try {
+      const isAdmin = req.user.role === 'Admin';
 
-    // Se o usuário for admin → vê todos; senão → vê apenas ele mesmo.
-    const query = isAdmin
-      ? `
-        SELECT id, name, email, role 
-        FROM users 
-        WHERE role IN ('Admin', 'User', 'Vendedor')
-        ORDER BY name;
-      `
-      : `
-        SELECT id, name, email, role 
-        FROM users 
-        WHERE id = $1
-        ORDER BY name;
-      `;
+      // Se for Admin → lista todos; senão → apenas ele mesmo
+      const query = isAdmin
+        ? `
+          SELECT id, name, email, role
+          FROM users
+          WHERE role IN ('Admin', 'User', 'Vendedor')
+          ORDER BY name;
+        `
+        : `
+          SELECT id, name, email, role
+          FROM users
+          WHERE id = $1
+          ORDER BY name;
+        `;
 
-    const values = isAdmin ? [] : [req.user.id];
-    const result = await pool.query(query, values);
+      const values = isAdmin ? [] : [req.user.id];
+      const result = await pool.query(query, values);
 
-    if (!result.rows || result.rows.length === 0) {
-      return res.status(404).json({ success: false, message: 'Nenhum vendedor encontrado.' });
+      if (!result.rows || result.rows.length === 0) {
+        return res.status(200).json({ success: true, data: [] });
+      }
+
+      return res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+      console.error('❌ Erro ao buscar vendedores:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno ao buscar vendedores.',
+        details: error.message,
+      });
     }
-
-    return res.status(200).json({ success: true, data: result.rows });
-  } catch (error) {
-    console.error('❌ Erro ao buscar vendedores:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro interno do servidor ao buscar vendedores.',
-      details: error.message
-    });
   }
-}
 
   // =============================================================
   // 2. DADOS DO DASHBOARD
@@ -68,7 +68,7 @@ class ReportController {
       console.error('Erro ao buscar dados do dashboard:', error);
       return res.status(500).json({
         success: false,
-        message: 'Erro interno do servidor ao buscar dados do dashboard.'
+        message: 'Erro interno do servidor ao buscar dados do dashboard.',
       });
     }
   }
@@ -98,9 +98,7 @@ class ReportController {
 
       const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       if (leads.length === 0) {
-        return res
-          .status(404)
-          .json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
+        return res.status(404).json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
       }
 
       const workbook = new ExcelJS.Workbook();
@@ -115,10 +113,10 @@ class ReportController {
         { header: 'Origem', key: 'origin', width: 15 },
         { header: 'Proprietário', key: 'owner_name', width: 25 },
         { header: 'Consumo Médio (KW)', key: 'avg_consumption', width: 25 },
-        { header: 'Data de Criação', key: 'created_at', width: 20 }
+        { header: 'Data de Criação', key: 'created_at', width: 20 },
       ];
 
-      leads.forEach(lead => {
+      leads.forEach((lead) => {
         sheet.addRow({
           id: lead.id,
           name: lead.name,
@@ -128,7 +126,7 @@ class ReportController {
           origin: lead.origin,
           owner_name: lead.owner_name,
           avg_consumption: lead.avg_consumption || 0,
-          created_at: new Date(lead.created_at).toLocaleDateString('pt-BR')
+          created_at: new Date(lead.created_at).toLocaleDateString('pt-BR'),
         });
       });
 
@@ -161,7 +159,7 @@ class ReportController {
 
       const doc = new pdfKit();
       const pdfData = [];
-      doc.on('data', chunk => pdfData.push(chunk));
+      doc.on('data', (chunk) => pdfData.push(chunk));
       doc.on('end', () => {
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader(
@@ -195,7 +193,7 @@ class ReportController {
       y += 20;
 
       doc.font('Helvetica');
-      tableData.slice(1).forEach(row => {
+      tableData.slice(1).forEach((row) => {
         doc.text(row[0], 50, y, { width: 250 });
         doc.text(row[1], 350, y);
         y += 15;
@@ -205,7 +203,7 @@ class ReportController {
       if (leads.length > 0) {
         doc.fontSize(16).text(`Leads (${leads.length})`, 50, doc.y);
         doc.moveDown(0.5);
-        leads.slice(0, 10).forEach(l => {
+        leads.slice(0, 10).forEach((l) => {
           doc.fontSize(10).text(`${l.name} - ${l.status} - ${l.avg_consumption || 0} kW - ${l.owner_name}`, 50);
         });
       }

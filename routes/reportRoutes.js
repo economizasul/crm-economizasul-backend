@@ -4,17 +4,15 @@ const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 const ReportController = require('../controllers/ReportController');
 
-// 🔒 Middleware de autenticação em todas as rotas
+// 🔒 Protege todas as rotas
 router.use(protect);
 
+// 👥 Rota para buscar vendedores reais (usada pela tela de relatórios)
 router.get('/sellers', ReportController.getSellers);
 
 // 📊 Dashboard principal
 router.get('/', ReportController.getReportData);
 router.post('/', ReportController.getReportData);
-
-// 👥 Nova rota para listar vendedores reais
-router.get('/vendors', ReportController.getVendors);
 
 // 📄 Exportações
 router.get('/export/csv', ReportController.exportCsv);
