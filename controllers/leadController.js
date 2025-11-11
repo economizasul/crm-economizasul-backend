@@ -13,7 +13,7 @@ class LeadController {
     this.reassignLead = this.reassignLead.bind(this);
   }
 
-  // FORMATA NOTAS COM SEGURANÇA TOTAL
+  /** 🔹 Formata o objeto Lead de forma segura */
   formatLeadResponse(lead) {
     let notesArray = [];
 
@@ -24,8 +24,8 @@ class LeadController {
           notesArray = parsed.filter(note => note && note.text);
         }
       } catch (e) {
-        notesArray = [{ 
-          text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida', 
+        notesArray = [{
+          text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
           timestamp: Date.now(),
           user: 'Sistema'
         }];
@@ -34,6 +34,7 @@ class LeadController {
 
     return {
       _id: lead.id,
+      id: lead.id,
       name: lead.name || 'Sem nome',
       email: lead.email || null,
       phone: lead.phone,
@@ -53,11 +54,11 @@ class LeadController {
     };
   }
 
-  // CADASTRO COM NOTA AUTOMÁTICA + owner_id FORÇADO
+  /** 🔹 Criação de Lead com nota inicial e owner_id do usuário logado */
   async createLead(req, res) {
-    const { 
-      name, email, phone, document, address, status, origin, uc, 
-      avg_consumption, estimated_savings, qsa, owner_id: bodyOwnerId 
+    const {
+      name, email, phone, document, address, status, origin, uc,
+      avg_consumption, estimated_savings, qsa, owner_id: bodyOwnerId
     } = req.body;
 
     const finalOwnerId = bodyOwnerId || req.user.id;
@@ -110,6 +111,7 @@ class LeadController {
     }
   }
 
+  /** 🔹 Retorna lista de leads conforme permissão do usuário */
   async getLeads(req, res) {
     const { status, ownerId, search } = req.query;
     const userRole = req.user.role;
@@ -130,6 +132,7 @@ class LeadController {
     }
   }
 
+  /** 🔹 Retorna um lead específico */
   async getLeadById(req, res) {
     const { id } = req.params;
     try {
@@ -142,51 +145,55 @@ class LeadController {
     }
   }
 
-  // UPDATE 100% FUNCIONAL: RETORNA LEAD ATUALIZADO
+  /** 🔹 Atualiza lead (dados, status, notas e transferência de owner_id) */
   async updateLead(req, res) {
     const { id } = req.params;
-    const { 
-      name, email, phone, document, address, status, origin, 
-      uc, avg_consumption, estimated_savings, qsa, newNote, owner_id 
+    const {
+      name, email, phone, document, address, status, origin,
+      uc, avg_consumption, estimated_savings, qsa, newNote, owner_id
     } = req.body;
 
     try {
       const existingLead = await Lead.findById(id);
       if (!existingLead) return res.status(404).json({ error: 'Lead não encontrado.' });
 
-      if (existingLead.owner_id !== req.user.id && req.user.role !== 'Admin') {
+      // 🔒 Permissões: Admin pode tudo; user apenas se for dono.
+      const isOwner = Number(existingLead.owner_id) === Number(req.user.id);
+      const isAdmin = req.user.role === 'Admin';
+      if (!isOwner && !isAdmin) {
         return res.status(403).json({ error: 'Acesso negado.' });
       }
 
       const updates = {
-        name: (name || '').trim() || existingLead.name,
+        name: name?.trim() || existingLead.name,
         email: email?.trim() || existingLead.email,
         phone: phone ? phone.replace(/\D/g, '') : existingLead.phone,
-        document: (document || '').trim() || existingLead.document,
-        address: (address || '').trim() || existingLead.address,
+        document: document?.trim() || existingLead.document,
+        address: address?.trim() || existingLead.address,
         status: status || existingLead.status,
-        origin: (origin || '').trim() || existingLead.origin,
-        uc: (uc || '').trim() || existingLead.uc,
-        avg_consumption: avg_consumption !== undefined ? (avg_consumption ? parseFloat(avg_consumption) : null) : existingLead.avg_consumption,
-        estimated_savings: estimated_savings !== undefined ? (estimated_savings ? parseFloat(estimated_savings) : null) : existingLead.estimated_savings,
-        qsa: (qsa || '').trim() || existingLead.qsa
+        origin: origin?.trim() || existingLead.origin,
+        uc: uc?.trim() || existingLead.uc,
+        avg_consumption: avg_consumption !== undefined
+          ? (avg_consumption ? parseFloat(avg_consumption) : null)
+          : existingLead.avg_consumption,
+        estimated_savings: estimated_savings !== undefined
+          ? (estimated_savings ? parseFloat(estimated_savings) : null)
+          : existingLead.estimated_savings,
+        qsa: qsa?.trim() || existingLead.qsa,
       };
 
-      // ATUALIZA owner_id SE FOR ENVIADO
-      if (owner_id !== undefined) {
+      // ✅ Admin pode transferir titularidade
+      if (isAdmin && owner_id !== undefined) {
         updates.owner_id = parseInt(owner_id, 10);
       }
 
-      // ADICIONA NOVA NOTA
+      // 🟢 Adiciona nova nota (histórico)
       if (newNote?.text?.trim()) {
         let notes = [];
-        if (existingLead.notes) {
-          try {
-            const parsed = JSON.parse(existingLead.notes);
-            if (Array.isArray(parsed)) notes = parsed;
-          } catch (e) {
-            console.warn('JSON de notas corrompido, resetando...');
-          }
+        try {
+          notes = existingLead.notes ? JSON.parse(existingLead.notes) : [];
+        } catch {
+          notes = [];
         }
 
         notes.push({
@@ -198,15 +205,10 @@ class LeadController {
         updates.notes = JSON.stringify(notes);
       }
 
-      // FAZ O UPDATE
+      // 📝 Atualiza no banco
       await Lead.update(id, updates);
 
-      // BUSCA O LEAD ATUALIZADO (OBRIGATÓRIO)
       const updatedLead = await Lead.findById(id);
-      if (!updatedLead) {
-        return res.status(500).json({ error: 'Erro ao buscar lead atualizado.' });
-      }
-
       res.status(200).json({
         message: 'Lead atualizado com sucesso!',
         lead: this.formatLeadResponse(updatedLead)
@@ -218,12 +220,15 @@ class LeadController {
     }
   }
 
+  /** 🔹 Exclusão de lead */
   async deleteLead(req, res) {
     const { id } = req.params;
     try {
       const lead = await Lead.findById(id);
       if (!lead) return res.status(404).json({ error: 'Lead não encontrado.' });
-      if (lead.owner_id !== req.user.id && req.user.role !== 'Admin') {
+
+      const isOwner = Number(lead.owner_id) === Number(req.user.id);
+      if (!isOwner && req.user.role !== 'Admin') {
         return res.status(403).json({ error: 'Acesso negado.' });
       }
 
@@ -235,18 +240,24 @@ class LeadController {
     }
   }
 
+  /** 🔹 Lista de usuários para reatribuição (apenas admin) */
   async getUsersForReassignment(req, res) {
     if (req.user.role !== 'Admin') {
       return res.status(403).json({ error: 'Acesso negado.' });
     }
     try {
-      const result = await pool.query('SELECT id, name, role FROM users WHERE role IN ($1, $2) ORDER BY name', ['Admin', 'User']);
+      const result = await pool.query(
+        'SELECT id, name, role FROM users WHERE role IN ($1, $2) ORDER BY name',
+        ['Admin', 'User']
+      );
       res.json(result.rows);
     } catch (error) {
+      console.error("Erro ao listar usuários:", error);
       res.status(500).json({ error: 'Erro ao listar usuários.' });
     }
   }
 
+  /** 🔹 Transferência direta de lead (reassign) */
   async reassignLead(req, res) {
     const { id } = req.params;
     const { newOwnerId } = req.body;
@@ -268,13 +279,12 @@ class LeadController {
       }
 
       const lead = await Lead.findById(id);
-
-      res.json({ 
-        message: 'Lead reatribuído com sucesso.', 
-        lead: this.formatLeadResponse(lead) 
+      res.json({
+        message: 'Lead reatribuído com sucesso.',
+        lead: this.formatLeadResponse(lead)
       });
     } catch (error) {
-      console.error("Erro ao reatribuir:", error);
+      console.error("Erro ao reatribuir lead:", error);
       res.status(500).json({ error: 'Erro ao reatribuir lead.' });
     }
   }
