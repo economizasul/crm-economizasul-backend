@@ -1,218 +1,215 @@
 // services/ReportDataService.js
-const { pool } = require('../config/db'); // Garanta que o caminho para o pool do DB está correto
-const Lead = require('../models/Lead'); // Se você precisar de métodos do modelo Lead
+const { pool } = require('../config/db');
+const Lead = require('../models/Lead');
 
 class ReportDataService {
-    
-    // =============================================================
-    // 🛠️ FUNÇÕES AUXILIARES PARA FILTROS
-    // =============================================================
 
-    /**
-     * Constrói a cláusula WHERE e os valores do SQL baseado nos filtros e permissões.
-     * @param {object} filters - Filtros como dateRange, status, ownerId, etc.
-     * @param {number} userId - ID do usuário logado.
-     * @param {boolean} isAdmin - Se o usuário é Admin.
-     * @returns {object} { whereClauses: string, queryParams: any[] }
-     */
-    static buildFilterQuery(filters, userId, isAdmin) {
-        let whereClauses = [];
-        let queryParams = [];
-        let paramIndex = 1;
+  /**
+   * Normaliza e constrói cláusulas WHERE / params a partir dos filtros
+   * Aceita tanto filtros.dateRange.{startDate,endDate} quanto filtros.startDate/filtros.endDate
+   * Aceita vendorId ou ownerId e source (origem)
+   */
+  static buildFilterQuery(filters = {}, userId, isAdmin) {
+    const whereClauses = [];
+    const queryParams = [];
+    let idx = 1;
 
-        // 1. FILTRO DE PROPRIETÁRIO (OWNER_ID)
-        // Se for Admin e passar ownerId, filtra por ele. Caso contrário, se não for Admin, filtra pelo ID do usuário logado.
-        let targetOwnerId = userId;
-        if (isAdmin) {
-            if (filters.ownerId && filters.ownerId !== 'all') {
-                targetOwnerId = filters.ownerId;
-            } else if (filters.ownerId === 'all') {
-                targetOwnerId = null; // Admin pode ver todos se passar 'all'
-            }
-        }
-        
-        if (targetOwnerId !== null) {
-            whereClauses.push(`l.owner_id = $${paramIndex++}`);
-            queryParams.push(targetOwnerId);
-        }
+    // OWNER / VENDOR
+    let ownerFilter = null;
+    if (filters.vendorId !== undefined) ownerFilter = filters.vendorId;
+    else if (filters.ownerId !== undefined) ownerFilter = filters.ownerId;
 
-        // 2. FILTRO DE STATUS
-        if (filters.status && filters.status !== 'all') {
-            whereClauses.push(`l.status = $${paramIndex++}`);
-            queryParams.push(filters.status);
-        }
-
-        // 3. FILTRO DE DATA (Assumindo um 'dateRange' com 'startDate' e 'endDate')
-        if (filters.dateRange) {
-            if (filters.dateRange.startDate) {
-                whereClauses.push(`l.created_at >= $${paramIndex++}`);
-                queryParams.push(filters.dateRange.startDate);
-            }
-            if (filters.dateRange.endDate) {
-                whereClauses.push(`l.created_at <= $${paramIndex++}`);
-                // Adiciona um dia para incluir o dia inteiro no filtro
-                const endDate = new Date(filters.dateRange.endDate);
-                endDate.setDate(endDate.getDate() + 1);
-                queryParams.push(endDate.toISOString().split('T')[0]);
-            }
-        }
-
-        return {
-            whereClauses: whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '',
-            queryParams: queryParams
-        };
+    if (!isAdmin) {
+      // Non-admin only sees own leads
+      whereClauses.push(`l.owner_id = $${idx++}`);
+      queryParams.push(userId);
+    } else {
+      // Admin: if vendorId present and !== 'all', filter; if 'all' => no owner filter
+      if (ownerFilter && ownerFilter !== 'all') {
+        whereClauses.push(`l.owner_id = $${idx++}`);
+        queryParams.push(ownerFilter);
+      }
     }
 
-    // =============================================================
-    // 1. OBTENÇÃO DAS MÉTRICAS DO DASHBOARD
-    // =============================================================
+    // ORIGIN / SOURCE
+    if (filters.source && filters.source !== 'all') {
+      whereClauses.push(`l.origin = $${idx++}`);
+      queryParams.push(filters.source);
+    }
 
-    /**
-     * Busca e calcula as métricas do dashboard.
-     */
-    static async getDashboardMetrics(filters = {}, userId, isAdmin) {
+    // DATE RANGE - accept startDate/endDate or dateRange object
+    let startDate = filters.startDate || (filters.dateRange && filters.dateRange.startDate);
+    let endDate = filters.endDate || (filters.dateRange && filters.dateRange.endDate);
+
+    if (startDate) {
+      whereClauses.push(`l.created_at >= $${idx++}`);
+      // pass ISO date (YYYY-MM-DD) to DB
+      queryParams.push(startDate);
+    }
+    if (endDate) {
+      // include full day: use <= endDate + ' 23:59:59' or add one day exclusive; here we use <= endDate + ' 23:59:59'
+      const endDateTime = `${endDate} 23:59:59`;
+      whereClauses.push(`l.created_at <= $${idx++}`);
+      queryParams.push(endDateTime);
+    }
+
+    const where = whereClauses.length ? 'WHERE ' + whereClauses.join(' AND ') : '';
+    return { where, params: queryParams };
+  }
+
+  /**
+   * Retorna métricas do dashboard estruturadas para o frontend
+   * - productivity: objeto com KPIs
+   * - conversionBySource: array com { source, totalLeads, wonLeads, conversionRate }
+   */
+  static async getDashboardMetrics(filters = {}, userId, isAdmin) {
+    try {
+      const { where, params } = this.buildFilterQuery(filters, userId, isAdmin);
+
+      // Seleciona campos necessários: status, owner, created/updated, origem e consumo (avg_consumption)
+      const sql = `
+        SELECT
+          l.id,
+          l.status,
+          l.origin,
+          l.estimated_savings,
+          l.avg_consumption,
+          l.created_at,
+          l.updated_at,
+          l.owner_id,
+          u.name AS owner_name
+        FROM leads l
+        LEFT JOIN users u ON l.owner_id = u.id
+        ${where}
+      `;
+
+      const result = await pool.query(sql, params);
+      const leads = result.rows || [];
+
+      // Normaliza status names: pelo seu frontend parece usar 'Ganho' e 'Perdido'
+      const isWon = (s) => s && (s.toLowerCase() === 'ganho' || s.toLowerCase() === 'fechado' || s.toLowerCase() === 'convertido');
+      const isLost = (s) => s && s.toLowerCase() === 'perdido';
+
+      const totalLeads = leads.length;
+      const totalWonArr = leads.filter(l => isWon(l.status));
+      const totalLostArr = leads.filter(l => isLost(l.status));
+      const leadsActiveArr = leads.filter(l => !isWon(l.status) && !isLost(l.status));
+
+      const totalWonCount = totalWonArr.length;
+      const totalLostCount = totalLostArr.length;
+      const leadsActive = leadsActiveArr.length;
+
+      // SUM of consumption (kW) for won leads (assume avg_consumption stores kW or a numeric field you want)
+      const totalWonValueKW = totalWonArr.reduce((sum, l) => {
+        const v = parseFloat(l.avg_consumption || 0);
+        return sum + (isNaN(v) ? 0 : v);
+      }, 0);
+
+      // Conversion rate: leads won / leads that entered funnel (we'll use totalLeads that match filters)
+      const conversionRate = totalLeads > 0 ? (totalWonCount / totalLeads) : 0;
+      const lossRate = totalLeads > 0 ? (totalLostCount / totalLeads) : 0;
+
+      // Average closing time (days) for won leads: difference between created_at and updated_at
+      let avgClosingTimeDays = 0;
+      if (totalWonCount > 0) {
+        const totalDays = totalWonArr.reduce((sum, l) => {
+          const created = new Date(l.created_at);
+          const updated = new Date(l.updated_at || created);
+          const diffMs = updated - created;
+          const diffDays = diffMs / (1000 * 60 * 60 * 24);
+          return sum + diffDays;
+        }, 0);
+        avgClosingTimeDays = totalDays / totalWonCount;
+      }
+
+      // Conversão por origem (source)
+      // Group leads by origin and compute counts and conversion
+      const bySource = {};
+      for (const l of leads) {
+        const src = l.origin || 'Desconhecida';
+        if (!bySource[src]) bySource[src] = { source: src, totalLeads: 0, wonLeads: 0 };
+        bySource[src].totalLeads++;
+        if (isWon(l.status)) bySource[src].wonLeads++;
+      }
+      const conversionBySource = Object.values(bySource).map(s => ({
+        source: s.source,
+        totalLeads: s.totalLeads,
+        wonLeads: s.wonLeads,
+        conversionRate: s.totalLeads > 0 ? s.wonLeads / s.totalLeads : 0
+      }));
+
+      // Retorna o objeto esperado pelo frontend
+      return {
+        productivity: {
+          totalLeads,
+          leadsActive,
+          totalWonCount,
+          totalLostCount,
+          totalWonValueKW,        // **kW**
+          conversionRate,
+          lossRate,
+          avgClosingTimeDays
+        },
+        conversionBySource
+      };
+
+    } catch (err) {
+      console.error("Erro no ReportDataService.getDashboardMetrics:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Retorna leads completos para exportação
+   */
+  static async getLeadsForExport(filters = {}, userId, isAdmin) {
+    try {
+      const { where, params } = this.buildFilterQuery(filters, userId, isAdmin);
+
+      const query = `
+        SELECT
+          l.id, l.name, l.email, l.phone, l.status, l.origin,
+          l.estimated_savings, l.avg_consumption, l.created_at, u.name AS owner_name
+        FROM leads l
+        LEFT JOIN users u ON l.owner_id = u.id
+        ${where}
+        ORDER BY l.created_at DESC
+      `;
+
+      const result = await pool.query(query, params);
+      return result.rows || [];
+    } catch (err) {
+      console.error("Erro no ReportDataService.getLeadsForExport:", err);
+      throw err;
+    }
+  }
+
+  /**
+   * Retorna notas analíticas de um lead
+   */
+  static async getAnalyticNotes(leadId) {
+    try {
+      const lead = await Lead.findById(leadId);
+      if (!lead) return null;
+
+      let notesArray = [];
+      if (lead.notes && typeof lead.notes === 'string') {
         try {
-            const { whereClauses, queryParams } = this.buildFilterQuery(filters, userId, isAdmin);
-
-            // Adicionamos um UNION ou JOIN na query principal para trazer o nome do owner
-            const baseQuery = `
-                SELECT 
-                    l.id, l.status, l.estimated_savings, l.created_at, l.updated_at,
-                    u.name AS owner_name
-                FROM 
-                    leads l
-                JOIN 
-                    users u ON l.owner_id = u.id
-                ${whereClauses}
-            `;
-            
-            const result = await pool.query(baseQuery, queryParams);
-            const leads = result.rows;
-            
-            // ==================================
-            // CÁLCULO DAS MÉTRICAS
-            // ==================================
-
-            const totalLeads = leads.length;
-            const leadsActive = leads.filter(l => l.status !== 'Convertido' && l.status !== 'Perdido').length;
-            const totalWon = leads.filter(l => l.status === 'Convertido');
-            const totalLost = leads.filter(l => l.status === 'Perdido');
-
-            const totalWonCount = totalWon.length;
-            const totalLostCount = totalLost.length;
-            
-            // Soma do valor de economia dos leads convertidos
-            const totalWonValue = totalWon.reduce((sum, lead) => sum + (lead.estimated_savings || 0), 0);
-            
-            // Cálculo da Taxa de Conversão (Leads Ganhos / Total Leads)
-            const conversionRate = totalLeads > 0 ? totalWonCount / totalLeads : 0;
-
-            // Cálculo da Taxa de Perda (Leads Perdidos / Total Leads)
-            const lossRate = totalLeads > 0 ? totalLostCount / totalLeads : 0;
-            
-            // Tempo Médio de Fechamento (somente para leads 'Convertido')
-            let avgClosingTimeDays = 0;
-            if (totalWonCount > 0) {
-                const totalDays = totalWon.reduce((sum, lead) => {
-                    const created = new Date(lead.created_at);
-                    const updated = new Date(lead.updated_at);
-                    const diffTime = Math.abs(updated - created);
-                    const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24));
-                    return sum + diffDays;
-                }, 0);
-                avgClosingTimeDays = totalDays / totalWonCount;
-            }
-
-            return {
-                productivity: {
-                    totalLeads,
-                    leadsActive,
-                    totalWonCount,
-                    totalLostCount,
-                    totalWonValue,
-                    conversionRate,
-                    lossRate,
-                    avgClosingTimeDays
-                },
-                // Aqui você pode adicionar mais blocos de métricas (e.g., por status, por origem)
-            };
-
-        } catch (error) {
-            console.error("Erro no ReportDataService.getDashboardMetrics:", error.message);
-            throw new Error('Falha ao calcular métricas do dashboard.');
+          const parsed = JSON.parse(lead.notes);
+          if (Array.isArray(parsed)) notesArray = parsed.filter(n => n && n.text);
+        } catch {
+          notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime(), user: 'Sistema' }];
         }
+      } else if (Array.isArray(lead.notes)) {
+        notesArray = lead.notes.filter(n => n && n.text);
+      }
+
+      return notesArray;
+    } catch (err) {
+      console.error("Erro no ReportDataService.getAnalyticNotes:", err);
+      throw err;
     }
-
-
-    // =============================================================
-    // 2. OBTENÇÃO DOS LEADS PARA EXPORTAÇÃO
-    // =============================================================
-
-    /**
-     * Busca leads completos para exportação (CSV/PDF) com base nos filtros.
-     */
-    static async getLeadsForExport(filters = {}, userId, isAdmin) {
-        try {
-            const { whereClauses, queryParams } = this.buildFilterQuery(filters, userId, isAdmin);
-
-            const query = `
-                SELECT 
-                    l.id, l.name, l.email, l.phone, l.status, l.origin, l.estimated_savings, l.created_at,
-                    u.name AS owner_name
-                FROM 
-                    leads l
-                JOIN 
-                    users u ON l.owner_id = u.id
-                ${whereClauses}
-                ORDER BY 
-                    l.created_at DESC
-            `;
-
-            const result = await pool.query(query, queryParams);
-            return result.rows;
-
-        } catch (error) {
-            console.error("Erro no ReportDataService.getLeadsForExport:", error.message);
-            throw new Error('Falha ao buscar leads para exportação.');
-        }
-    }
-
-
-    // =============================================================
-    // 3. OBTENÇÃO DE NOTAS ANALÍTICAS
-    // =============================================================
-
-    /**
-     * Busca as notas de um lead específico.
-     */
-    static async getAnalyticNotes(leadId) {
-        try {
-            // Reutiliza o método findById do modelo Lead
-            const lead = await Lead.findById(leadId); 
-            
-            if (!lead) return null;
-
-            // Retorna as notas no formato de array, assim como é feito no LeadController
-            let notesArray = [];
-            if (lead.notes && typeof lead.notes === 'string') {
-                try {
-                    notesArray = JSON.parse(lead.notes);
-                    notesArray = Array.isArray(notesArray) ? notesArray.filter(n => n && n.text) : [];
-                } catch (e) {
-                    // Se não for JSON válido, trata como uma nota única
-                    notesArray = [{ text: lead.notes, timestamp: new Date(lead.updated_at).getTime() }];
-                }
-            } else if (Array.isArray(lead.notes)) {
-                notesArray = lead.notes.filter(n => n && n.text);
-            }
-
-            return notesArray;
-
-        } catch (error) {
-            console.error("Erro no ReportDataService.getAnalyticNotes:", error.message);
-            throw new Error('Falha ao buscar notas analíticas.');
-        }
-    }
+  }
 }
 
 module.exports = ReportDataService;
