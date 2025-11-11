@@ -105,7 +105,7 @@ class ReportDataService {
         leadsActive,
         totalWonCount,
         totalLostCount,
-        totalWonValue, // ✅ em KW
+        totalWonValue,
         conversionRate,
         lossRate,
         avgClosingTimeDays

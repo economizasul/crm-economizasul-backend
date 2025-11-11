@@ -10,11 +10,33 @@ class ReportController {
     this.getAnalyticNotes = this.getAnalyticNotes.bind(this);
     this.exportCsv = this.exportCsv.bind(this);
     this.exportPdf = this.exportPdf.bind(this);
-    this.getSellers = this.getSellers.bind(this);
+    this.getVendors = this.getVendors.bind(this);
   }
 
   // =============================================================
-  // 1. DADOS DO DASHBOARD
+  // 1. LISTAR VENDEDORES REAIS (coluna "name" da tabela "users")
+  // =============================================================
+  async getVendors(req, res) {
+    try {
+      const isAdmin = req.user.role === 'Admin';
+      const query = isAdmin
+        ? `SELECT id, name, email, role FROM users ORDER BY name`
+        : `SELECT id, name, email, role FROM users WHERE id = $1 ORDER BY name`;
+
+      const values = isAdmin ? [] : [req.user.id];
+      const result = await pool.query(query, values);
+
+      return res.status(200).json({ success: true, data: result.rows });
+    } catch (error) {
+      console.error('Erro ao buscar vendedores:', error);
+      return res
+        .status(500)
+        .json({ success: false, message: 'Erro ao buscar vendedores.' });
+    }
+  }
+
+  // =============================================================
+  // 2. DADOS DO DASHBOARD
   // =============================================================
   async getReportData(req, res) {
     try {
@@ -26,12 +48,15 @@ class ReportController {
       return res.status(200).json({ success: true, data: metrics });
     } catch (error) {
       console.error('Erro ao buscar dados do dashboard:', error);
-      return res.status(500).json({ success: false, message: 'Erro interno do servidor ao buscar dados do dashboard.' });
+      return res.status(500).json({
+        success: false,
+        message: 'Erro interno do servidor ao buscar dados do dashboard.'
+      });
     }
   }
 
   // =============================================================
-  // 2. NOTAS ANALÍTICAS
+  // 3. NOTAS ANALÍTICAS
   // =============================================================
   async getAnalyticNotes(req, res) {
     try {
@@ -45,7 +70,7 @@ class ReportController {
   }
 
   // =============================================================
-  // 3. EXPORTAÇÃO CSV
+  // 4. EXPORTAÇÃO CSV
   // =============================================================
   async exportCsv(req, res) {
     try {
@@ -55,7 +80,9 @@ class ReportController {
 
       const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       if (leads.length === 0) {
-        return res.status(404).json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
+        return res
+          .status(404)
+          .json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
       }
 
       const workbook = new ExcelJS.Workbook();
@@ -88,7 +115,11 @@ class ReportController {
       });
 
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=leads_${new Date().toISOString().slice(0, 10)}.csv`);
+      res.setHeader(
+        'Content-Disposition',
+        `attachment; filename=leads_${new Date().toISOString().slice(0, 10)}.csv`
+      );
+
       await workbook.csv.write(res);
       res.end();
     } catch (error) {
@@ -98,7 +129,7 @@ class ReportController {
   }
 
   // =============================================================
-  // 4. EXPORTAÇÃO PDF
+  // 5. EXPORTAÇÃO PDF
   // =============================================================
   async exportPdf(req, res) {
     try {
@@ -115,7 +146,10 @@ class ReportController {
       doc.on('data', chunk => pdfData.push(chunk));
       doc.on('end', () => {
         res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=relatorio_${new Date().toISOString().slice(0, 10)}.pdf`);
+        res.setHeader(
+          'Content-Disposition',
+          `attachment; filename=relatorio_${new Date().toISOString().slice(0, 10)}.pdf`
+        );
         res.send(Buffer.concat(pdfData));
       });
 
@@ -130,7 +164,7 @@ class ReportController {
         ['Métrica', 'Valor'],
         ['Leads Ativos', prod.leadsActive.toLocaleString('pt-BR')],
         ['Vendas Concluídas (Qtd)', prod.totalWonCount.toLocaleString('pt-BR')],
-        ['Valor Total (KW)', `${prod.totalWonValue.toFixed(2).replace('.', ',')} kW`],
+        ['Valor Total (KW)', `${prod.totalWonValueKW.toFixed(2).replace('.', ',')} kW`],
         ['Taxa de Conversão', `${(prod.conversionRate * 100).toFixed(2).replace('.', ',')}%`],
         ['Taxa de Perda', `${(prod.lossRate * 100).toFixed(2).replace('.', ',')}%`],
         ['Tempo Médio de Fechamento', `${prod.avgClosingTimeDays.toFixed(1)} dias`],
@@ -161,24 +195,6 @@ class ReportController {
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
       res.status(500).json({ success: false, message: 'Erro interno ao gerar PDF.' });
-    }
-  }
-
-  // =============================================================
-  // 5. LISTAR VENDEDORES REAIS DO BANCO
-  // =============================================================
-  async getSellers(req, res) {
-    try {
-      const result = await pool.query(`
-        SELECT id, name, email, role
-        FROM users
-        WHERE role IN ('Admin', 'User', 'Vendedor')
-        ORDER BY name
-      `);
-      res.status(200).json(result.rows);
-    } catch (error) {
-      console.error('Erro ao buscar vendedores:', error);
-      res.status(500).json({ error: 'Erro ao buscar vendedores.' });
     }
   }
 }
