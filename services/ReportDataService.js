@@ -9,7 +9,7 @@ class ReportDataService {
     let params = [];
     let i = 1;
 
-    // Filtra por Vendedor (owner_id)
+    // Filtro por vendedor
     if (isAdmin) {
       if (filters.ownerId && filters.ownerId !== 'all') {
         where.push(`l.owner_id = $${i++}`);
@@ -42,6 +42,9 @@ class ReportDataService {
     return { whereSQL, params };
   }
 
+  // ============================================================
+  // 📊 DASHBOARD MÉTRICAS PRINCIPAIS
+  // ============================================================
   static async getDashboardMetrics(filters = {}, userId, isAdmin) {
     const { whereSQL, params } = this.buildFilterQuery(filters, userId, isAdmin);
 
@@ -57,14 +60,30 @@ class ReportDataService {
     const result = await pool.query(query, params);
     const leads = result.rows;
 
+    // ============================================================
+    // 🧮 Cálculos de métricas
+    // ============================================================
     const totalLeads = leads.length;
-    const leadsActive = leads.filter(l => !['Ganho', 'Perdido', 'Fechado'].includes(l.status)).length;
-    const totalWon = leads.filter(l => ['Ganho', 'Convertido'].includes(l.status));
-    const totalLost = leads.filter(l => l.status === 'Perdido');
 
-    const totalWonValue = totalWon.reduce((sum, l) => sum + (l.avg_consumption || 0), 0);
+    // Consideramos como "ativos" tudo que não está Fechado/Ganho ou Perdido
+    const activeStatuses = [
+      'Novo',
+      'Em Atendimento',
+      'Negociação',
+      'Proposta',
+      'Ativo',
+      'Em andamento'
+    ];
+
+    const leadsActive = leads.filter(l => activeStatuses.includes(l.status)).length;
+    const totalWon = leads.filter(l => ['Fechado Ganho', 'Ganho', 'Convertido'].includes(l.status));
+    const totalLost = leads.filter(l => ['Perdido', 'Fechado Perdido'].includes(l.status));
+
     const totalWonCount = totalWon.length;
     const totalLostCount = totalLost.length;
+
+    // ✅ Agora soma o campo avg_consumption (em KW)
+    const totalWonValue = totalWon.reduce((sum, l) => sum + (l.avg_consumption || 0), 0);
 
     const conversionRate = totalLeads > 0 ? totalWonCount / totalLeads : 0;
     const lossRate = totalLeads > 0 ? totalLostCount / totalLeads : 0;
@@ -74,7 +93,8 @@ class ReportDataService {
       const totalDays = totalWon.reduce((sum, l) => {
         const created = new Date(l.created_at);
         const updated = new Date(l.updated_at);
-        return sum + Math.ceil((updated - created) / (1000 * 60 * 60 * 24));
+        const diffDays = Math.ceil((updated - created) / (1000 * 60 * 60 * 24));
+        return sum + diffDays;
       }, 0);
       avgClosingTimeDays = totalDays / totalWonCount;
     }
@@ -85,14 +105,17 @@ class ReportDataService {
         leadsActive,
         totalWonCount,
         totalLostCount,
-        totalWonValue, // agora soma avg_consumption (KW)
+        totalWonValue, // ✅ em KW
         conversionRate,
         lossRate,
-        avgClosingTimeDays,
-      },
+        avgClosingTimeDays
+      }
     };
   }
 
+  // ============================================================
+  // 📦 EXPORTAÇÃO DE LEADS
+  // ============================================================
   static async getLeadsForExport(filters = {}, userId, isAdmin) {
     const { whereSQL, params } = this.buildFilterQuery(filters, userId, isAdmin);
     const query = `
@@ -108,6 +131,9 @@ class ReportDataService {
     return result.rows;
   }
 
+  // ============================================================
+  // 🗒️ NOTAS ANALÍTICAS
+  // ============================================================
   static async getAnalyticNotes(leadId) {
     const lead = await Lead.findById(leadId);
     if (!lead) return null;
