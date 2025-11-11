@@ -4,21 +4,20 @@ const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 const ReportController = require('../controllers/ReportController');
 
-// 🔒 Todas as rotas protegidas
 router.use(protect);
 
-// 👥 Rota correta para listar vendedores reais
-router.get('/sellers', ReportController.getSellers);
+// rota que o frontend chama para carregar lista de vendedores
+router.get('/sellers', ReportController.getVendors);
 
-// 📊 Dashboard principal
+// dashboard principal
 router.get('/', ReportController.getReportData);
 router.post('/', ReportController.getReportData);
 
-// 📄 Exportações
+// export
 router.get('/export/csv', ReportController.exportCsv);
 router.get('/export/pdf', ReportController.exportPdf);
 
-// 📝 Notas analíticas
+// notes
 router.get('/notes/:leadId', ReportController.getAnalyticNotes);
 
 module.exports = router;
