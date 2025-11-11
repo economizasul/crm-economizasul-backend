@@ -47,21 +47,31 @@ class ReportController {
   // 2️⃣ DADOS DO DASHBOARD
   // =============================================================
   async getReportData(req, res) {
-    try {
-      const filters = req.body.filters || req.query.filters || {};
-      const userId = req.user?.id || null;
-      const isAdmin = req.user?.role === 'Admin' || false;
+  try {
+    // Normaliza filtros (aceita GET ou POST)
+    const filters = req.body.filters || req.query || {};
+    const userId = req.user?.id || null;
+    const isAdmin = req.user?.role === 'Admin' || false;
 
-      const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
-      return res.status(200).json({ success: true, data: metrics });
-    } catch (error) {
-      console.error('Erro ao buscar dados do dashboard:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro interno ao buscar dados do dashboard.'
-      });
+    // ✅ Sanitiza datas
+    if (filters.startDate && isNaN(new Date(filters.startDate).getTime())) {
+      delete filters.startDate;
     }
+    if (filters.endDate && isNaN(new Date(filters.endDate).getTime())) {
+      delete filters.endDate;
+    }
+
+    const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
+    return res.status(200).json({ success: true, data: metrics });
+  } catch (error) {
+    console.error('❌ Erro ao buscar dados do dashboard:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao buscar dados do dashboard.',
+      details: error.message
+    });
   }
+}
 
   // =============================================================
   // 3️⃣ NOTAS ANALÍTICAS
