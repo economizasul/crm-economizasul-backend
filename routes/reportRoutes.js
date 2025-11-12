@@ -1,23 +1,23 @@
 // routes/reportRoutes.js
 const express = require('express');
 const router = express.Router();
-const reportController = require('../controllers/ReportController');
-const authMiddleware = require('../middleware/authMiddleware');
+const { protect } = require('../middleware/authMiddleware'); // ✅ Importa função corretamente
+const ReportController = require('../controllers/ReportController');
 
-// ✅ Garante autenticação em todas as rotas
-router.use(authMiddleware);
+// Protege todas as rotas
+router.use(protect);
 
-// 🔹 Rota para obter vendedores
-router.get('/sellers', reportController.getVendors);
+// 🔹 Lista de vendedores
+router.get('/sellers', ReportController.getVendors);
 
-// 🔹 Rota principal do dashboard (⚠️ precisa aceitar POST!)
-router.post('/data', reportController.getReportData);
+// 🔹 Dados do dashboard
+router.post('/data', ReportController.getReportData);
 
-// 🔹 Rota para notas analíticas
-router.get('/notes/:leadId', reportController.getAnalyticNotes);
+// 🔹 Notas analíticas
+router.get('/notes/:leadId', ReportController.getAnalyticNotes);
 
 // 🔹 Exportações
-router.post('/export/csv', reportController.exportCsv);
-router.post('/export/pdf', reportController.exportPdf);
+router.post('/export/csv', ReportController.exportCsv);
+router.post('/export/pdf', ReportController.exportPdf);
 
 module.exports = router;
