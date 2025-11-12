@@ -31,7 +31,7 @@ app.use("/api/v1/auth", require('./routes/authRoutes'));
 app.use("/api/v1/leads", require('./routes/leadRoutes'));
 app.use("/api/v1/clients", require('./routes/clientRoutes'));
 app.use("/api/v1/pipeline", require('./routes/pipelineRoutes'));
-app.use("/api/v1/reports", require('./routes/reportRoutes')); // ⬅️ Aqui está a importação
+app.use('/api/v1/reports', require('./routes/reportRoutes')); // ⬅️ Aqui está a importação
 app.use("/api/v1/users", require('./routes/users'));
 app.use("/api/v1/configuracoes", require('./routes/configuracoes'));
 
