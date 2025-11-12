@@ -3,39 +3,38 @@ const { pool } = require('../config/db');
 const Lead = require('../models/Lead');
 
 class ReportDataService {
-
-  // ============================================================
-  // 🔧 CONSTRUÇÃO DINÂMICA DO WHERE
-  // ============================================================
   static buildFilterQuery(filters, userId, isAdmin) {
     let where = [];
     let params = [];
     let i = 1;
 
-    // ✅ Filtro por vendedor
+    const ownerId =
+      filters.ownerId && filters.ownerId !== 'all'
+        ? parseInt(filters.ownerId)
+        : null;
+
     if (isAdmin) {
-      if (filters.ownerId && filters.ownerId !== 'all') {
+      if (ownerId) {
         where.push(`l.owner_id = $${i++}`);
-        params.push(filters.ownerId);
+        params.push(ownerId);
       }
-      // se for "all" → não aplica filtro
     } else {
       where.push(`l.owner_id = $${i++}`);
       params.push(userId);
     }
 
-    // ✅ Filtro por datas (somente se válidas)
     if (filters.startDate && !isNaN(new Date(filters.startDate).getTime())) {
       where.push(`l.created_at >= $${i++}`);
       params.push(filters.startDate);
     }
 
     if (filters.endDate && !isNaN(new Date(filters.endDate).getTime())) {
-      where.push(`l.created_at <= $${i++}`);
-      params.push(filters.endDate);
+      const end = new Date(filters.endDate);
+      end.setDate(end.getDate() + 1);
+      where.push(`l.created_at < $${i++}`);
+      params.push(end.toISOString());
     }
 
-    // ✅ Filtro por origem
     if (filters.source && filters.source !== 'all') {
       where.push(`l.origin = $${i++}`);
       params.push(filters.source);
@@ -45,9 +44,6 @@ class ReportDataService {
     return { whereSQL, params };
   }
 
-  // ============================================================
-  // 📊 DASHBOARD MÉTRICAS PRINCIPAIS
-  // ============================================================
   static async getDashboardMetrics(filters = {}, userId, isAdmin) {
     const { whereSQL, params } = this.buildFilterQuery(filters, userId, isAdmin);
 
@@ -67,55 +63,50 @@ class ReportDataService {
     const result = await pool.query(query, params);
     const leads = result.rows || [];
 
-    // ============================================================
-    // 🧮 Cálculos de métricas
-    // ============================================================
-
     const totalLeads = leads.length;
 
-    // ✅ Normaliza o status para comparação insensível a maiúsculas/acentos
     const normalize = (s) =>
-      (s || '').toString().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toLowerCase();
+      (s || '')
+        .toString()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .trim()
+        .toLowerCase();
 
-    const leadsActive = leads.filter(l => {
-      const st = normalize(l.status);
-      return [
-        'novo',
-        'em atendimento',
-        'negociacao',
-        'proposta',
-        'ativo',
-        'em andamento'
-      ].includes(st);
-    }).length;
+    const leadsActive = leads.filter((l) =>
+      ['novo', 'em atendimento', 'negociacao', 'proposta', 'ativo', 'em andamento'].includes(
+        normalize(l.status)
+      )
+    ).length;
 
-    const totalWon = leads.filter(l => {
-      const st = normalize(l.status);
-      return ['fechado ganho', 'ganho', 'convertido'].includes(st);
-    });
+    const totalWon = leads.filter((l) =>
+      ['fechado ganho', 'ganho', 'convertido'].includes(normalize(l.status))
+    );
 
-    const totalLost = leads.filter(l => {
-      const st = normalize(l.status);
-      return ['perdido', 'fechado perdido'].includes(st);
-    });
+    const totalLost = leads.filter((l) =>
+      ['perdido', 'fechado perdido'].includes(normalize(l.status))
+    );
 
     const totalWonCount = totalWon.length;
     const totalLostCount = totalLost.length;
 
-    // ✅ Soma total de consumo (kW)
-    const totalWonValueKW = totalWon.reduce((sum, l) => sum + (l.avg_consumption || 0), 0);
+    const totalWonValueKW = totalWon.reduce(
+      (sum, l) => sum + (l.avg_consumption || 0),
+      0
+    );
 
-    // ✅ Taxas
     const conversionRate = totalLeads > 0 ? totalWonCount / totalLeads : 0;
     const lossRate = totalLeads > 0 ? totalLostCount / totalLeads : 0;
 
-    // ✅ Tempo médio de fechamento
     let avgClosingTimeDays = 0;
     if (totalWonCount > 0) {
       const totalDays = totalWon.reduce((sum, l) => {
         const created = new Date(l.created_at);
         const updated = new Date(l.updated_at);
-        const diffDays = Math.max(0, Math.ceil((updated - created) / (1000 * 60 * 60 * 24)));
+        const diffDays = Math.max(
+          0,
+          Math.ceil((updated - created) / (1000 * 60 * 60 * 24))
+        );
         return sum + diffDays;
       }, 0);
       avgClosingTimeDays = totalDays / totalWonCount;
@@ -127,17 +118,14 @@ class ReportDataService {
         leadsActive,
         totalWonCount,
         totalLostCount,
-        totalWonValueKW, // ⚡ nome padronizado pro frontend
+        totalWonValueKW,
         conversionRate,
         lossRate,
-        avgClosingTimeDays
-      }
+        avgClosingTimeDays,
+      },
     };
   }
 
-  // ============================================================
-  // 📦 EXPORTAÇÃO DE LEADS
-  // ============================================================
   static async getLeadsForExport(filters = {}, userId, isAdmin) {
     const { whereSQL, params } = this.buildFilterQuery(filters, userId, isAdmin);
     const query = `
@@ -160,9 +148,6 @@ class ReportDataService {
     return result.rows || [];
   }
 
-  // ============================================================
-  // 🗒️ NOTAS ANALÍTICAS
-  // ============================================================
   static async getAnalyticNotes(leadId) {
     const lead = await Lead.findById(leadId);
     if (!lead) return null;
