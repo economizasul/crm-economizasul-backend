@@ -13,79 +13,68 @@ class ReportController {
     this.exportPdf = this.exportPdf.bind(this);
   }
 
-  // =============================================================
-  // 1️⃣ LISTAR VENDEDORES REAIS (tabela users)
-  // =============================================================
+  // Lista vendedores reais (tabela users). Admin vê todos, user vê só ele.
   async getVendors(req, res) {
     try {
       const isAdmin = req.user?.role === 'Admin';
       const query = isAdmin
-        ? `SELECT id, name, email, role FROM users ORDER BY name`
-        : `SELECT id, name, email, role FROM users WHERE id = $1 ORDER BY name`;
+        ? `SELECT id, name, email, role FROM users ORDER BY name;`
+        : `SELECT id, name, email, role FROM users WHERE id = $1 ORDER BY name;`;
       const values = isAdmin ? [] : [req.user.id];
       const result = await pool.query(query, values);
-
-      return res.status(200).json({
-        success: true,
-        data: result.rows || []
-      });
+      return res.status(200).json({ success: true, data: result.rows || [] });
     } catch (error) {
-      console.error('❌ Erro ao buscar vendedores:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao buscar vendedores.',
-        details: error.message
-      });
+      console.error('Erro ao buscar vendedores:', error);
+      return res.status(500).json({ success: false, message: 'Erro ao buscar vendedores.', details: error.message });
     }
   }
 
+  // Recebe filtros (pode vir vendorId do frontend). Mapeia vendorId -> ownerId internamente.
+  async getReportData(req, res) {
+    try {
+      // aceita tanto GET (query) quanto POST (body)
+      const raw = req.body || req.query || {};
 
-async getReportData(req, res) {
-  try {
-    const filters = {
-      startDate: req.body.startDate || req.query.startDate || null,
-      endDate: req.body.endDate || req.query.endDate || null,
-      source: req.body.source || req.query.source || 'all',
-      ownerId: req.body.ownerId || req.query.ownerId || 'all'
-    };
+      // O frontend usa 'vendorId' (FilterBar). Aceitamos também 'ownerId' por compatibilidade.
+      const vendorId = raw.vendorId ?? raw.ownerId ?? raw.ownerid ?? raw.owner_id ?? null;
+      const startDate = raw.startDate ?? raw.dateStart ?? null;
+      const endDate = raw.endDate ?? raw.dateEnd ?? null;
+      const source = raw.source ?? raw.sources ?? 'all';
 
-    const userId = req.user?.id || null;
-    const isAdmin = req.user?.role === 'Admin' || false;
+      // Constrói o objeto de filtros no formato que o ReportDataService espera.
+      const filters = {
+        startDate: startDate || null,
+        endDate: endDate || null,
+        source: source || 'all',
+        // quando frontend enviar 'vendorId' ele ficará disponível; serviço decidirá se usa
+        ownerId: vendorId === undefined ? null : vendorId
+      };
 
-    const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
+      const userId = req.user?.id ?? null;
+      const isAdmin = req.user?.role === 'Admin';
 
-    return res.status(200).json({ success: true, data: metrics });
-  } catch (error) {
-    console.error('❌ Erro ao buscar dados do dashboard:', error);
-    return res.status(500).json({
-      success: false,
-      message: 'Erro interno ao buscar dados do dashboard.',
-      details: error.message
-    });
+      // DEBUG opcional (comente em produção)
+      // console.debug('getReportData -> filters:', filters, 'userId:', userId, 'isAdmin:', isAdmin);
+
+      const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
+      return res.status(200).json({ success: true, data: metrics });
+    } catch (error) {
+      console.error('Erro ao buscar dados do dashboard:', error);
+      return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados do dashboard.', details: error.message });
+    }
   }
-}
 
-
-  // =============================================================
-  // 3️⃣ NOTAS ANALÍTICAS
-  // =============================================================
   async getAnalyticNotes(req, res) {
     try {
       const { leadId } = req.params;
       const notes = await ReportDataService.getAnalyticNotes(leadId);
-      return res.status(200).json({
-        success: true,
-        data: notes || []
-      });
+      return res.status(200).json({ success: true, data: notes || [] });
     } catch (error) {
       console.error('Erro ao buscar notas analíticas:', error);
       res.status(500).json({ success: false, message: 'Erro interno ao buscar notas.' });
     }
   }
 
-  // =============================================================
-  // 4️⃣ EXPORTAÇÃO CSV
-  // =============================================================
   async exportCsv(req, res) {
     try {
       const filters = req.body.filters || req.query.filters || {};
@@ -93,11 +82,8 @@ async getReportData(req, res) {
       const isAdmin = req.user?.role === 'Admin' || false;
 
       const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
-      if (leads.length === 0) {
-        return res.status(404).json({
-          success: false,
-          message: 'Nenhum lead encontrado para exportação.'
-        });
+      if (!leads || leads.length === 0) {
+        return res.status(404).json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
       }
 
       const workbook = new ExcelJS.Workbook();
@@ -125,7 +111,7 @@ async getReportData(req, res) {
           origin: lead.origin,
           owner_name: lead.owner_name,
           avg_consumption: lead.avg_consumption || 0,
-          created_at: new Date(lead.created_at).toLocaleDateString('pt-BR')
+          created_at: lead.created_at ? new Date(lead.created_at).toLocaleDateString('pt-BR') : ''
         });
       });
 
@@ -139,9 +125,6 @@ async getReportData(req, res) {
     }
   }
 
-  // =============================================================
-  // 5️⃣ EXPORTAÇÃO PDF
-  // =============================================================
   async exportPdf(req, res) {
     try {
       const filters = req.body.filters || req.query.filters || {};
@@ -153,43 +136,38 @@ async getReportData(req, res) {
       const prod = metrics.productivity;
 
       const doc = new pdfKit();
-      const pdfData = [];
-      doc.on('data', chunk => pdfData.push(chunk));
+      const pdfChunks = [];
+      doc.on('data', c => pdfChunks.push(c));
       doc.on('end', () => {
         res.setHeader('Content-Type', 'application/pdf');
         res.setHeader('Content-Disposition', `attachment; filename=relatorio_${new Date().toISOString().slice(0, 10)}.pdf`);
-        res.send(Buffer.concat(pdfData));
+        res.send(Buffer.concat(pdfChunks));
       });
 
-      doc.fontSize(25).text('Relatório CRM - EconomizaSul', 50, 50);
-      doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`, 50, 80);
-      doc.moveDown(2);
+      doc.fontSize(20).text('Relatório CRM - EconomizaSul', { align: 'left' });
+      doc.moveDown();
+      doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
+      doc.moveDown();
 
-      doc.fontSize(18).text('Métricas de Produtividade', 50, doc.y);
+      doc.fontSize(14).text('Métricas de Produtividade');
       doc.moveDown(0.5);
 
-      const tableData = [
-        ['Métrica', 'Valor'],
-        ['Leads Ativos', prod.leadsActive.toLocaleString('pt-BR')],
-        ['Vendas Concluídas (Qtd)', prod.totalWonCount.toLocaleString('pt-BR')],
-        ['Valor Total (KW)', `${prod.totalWonValueKW?.toFixed(2).replace('.', ',') || '0,00'} kW`],
-        ['Taxa de Conversão', `${(prod.conversionRate * 100).toFixed(2).replace('.', ',')}%`],
-        ['Taxa de Perda', `${(prod.lossRate * 100).toFixed(2).replace('.', ',')}%`],
-        ['Tempo Médio de Fechamento', `${prod.avgClosingTimeDays.toFixed(1)} dias`],
-      ];
+      doc.fontSize(11);
+      doc.text(`Leads Ativos: ${prod.leadsActive}`);
+      doc.text(`Vendas Concluídas (Qtd): ${prod.totalWonCount}`);
+      doc.text(`Valor Total (kW): ${prod.totalWonValueKW?.toFixed(2).replace('.', ',') || '0,00'} kW`);
+      doc.text(`Taxa de Conversão: ${(prod.conversionRate * 100).toFixed(2).replace('.', ',')}%`);
+      doc.text(`Taxa de Perda: ${(prod.lossRate * 100).toFixed(2).replace('.', ',')}%`);
+      doc.text(`Tempo Médio de Fechamento: ${prod.avgClosingTimeDays.toFixed(1)} dias`);
 
-      let y = doc.y;
-      doc.font('Helvetica-Bold');
-      doc.text('Métrica', 50, y, { width: 250 });
-      doc.text('Valor', 350, y);
-      y += 20;
-
-      doc.font('Helvetica');
-      tableData.slice(1).forEach(row => {
-        doc.text(row[0], 50, y, { width: 250 });
-        doc.text(row[1], 350, y);
-        y += 15;
-      });
+      if (leads && leads.length) {
+        doc.moveDown();
+        doc.fontSize(12).text(`Leads (${leads.length}):`);
+        doc.fontSize(10);
+        leads.slice(0, 20).forEach(l => {
+          doc.text(`${l.name} — ${l.status} — ${l.avg_consumption || 0} kW — ${l.owner_name}`);
+        });
+      }
 
       doc.end();
     } catch (error) {
