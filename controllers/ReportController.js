@@ -39,37 +39,32 @@ class ReportController {
     }
   }
 
-  // =============================================================
-  // 2️⃣ DADOS DO DASHBOARD (usa filtros via query/body)
-  // =============================================================
-  async getReportData(req, res) {
-    try {
-      const filters = {
-        startDate: req.body.startDate || req.query.startDate || null,
-        endDate: req.body.endDate || req.query.endDate || null,
-        source: req.body.source || req.query.source || 'all',
-        ownerId: req.body.ownerId || req.query.ownerId || 'all'
-      };
 
-      const userId = req.user?.id || null;
-      const isAdmin = req.user?.role === 'Admin' || false;
+async getReportData(req, res) {
+  try {
+    const filters = {
+      startDate: req.body.startDate || req.query.startDate || null,
+      endDate: req.body.endDate || req.query.endDate || null,
+      source: req.body.source || req.query.source || 'all',
+      ownerId: req.body.ownerId || req.query.ownerId || 'all'
+    };
 
-      const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
+    const userId = req.user?.id || null;
+    const isAdmin = req.user?.role === 'Admin' || false;
 
-      // Retorna compatível com o frontend (tem que ter { success, data })
-      return res.status(200).json({
-        success: true,
-        data: metrics
-      });
-    } catch (error) {
-      console.error('❌ Erro ao buscar dados do dashboard:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro interno ao buscar dados do dashboard.',
-        details: error.message
-      });
-    }
+    const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
+
+    return res.status(200).json({ success: true, data: metrics });
+  } catch (error) {
+    console.error('❌ Erro ao buscar dados do dashboard:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro interno ao buscar dados do dashboard.',
+      details: error.message
+    });
   }
+}
+
 
   // =============================================================
   // 3️⃣ NOTAS ANALÍTICAS
