@@ -1,8 +1,9 @@
 // controllers/ReportController.js
 const { pool } = require('../config/db');
 const ReportDataService = require('../services/ReportDataService');
-const pdfKit = require('pdfkit');
-const ExcelJS = require('exceljs');
+// Assumindo que você tem serviços dedicados (GsvGeneratorService e PdfGeneratorService)
+const CSVGeneratorService = require('../services/GsvGeneratorService'); 
+const PDFGeneratorService = require('../services/PdfGeneratorService'); 
 
 class ReportController {
   constructor() {
@@ -13,7 +14,7 @@ class ReportController {
     this.exportPdf = this.exportPdf.bind(this);
   }
 
-  // Lista vendedores reais (tabela users). Admin vê todos, user vê só ele.
+  // Lista vendedores reais (Método Inalterado)
   async getVendors(req, res) {
     try {
       const isAdmin = req.user?.role === 'Admin';
@@ -29,150 +30,118 @@ class ReportController {
     }
   }
 
-  // Recebe filtros (pode vir vendorId do frontend). Mapeia vendorId -> ownerId internamente.
+  // Rota principal para buscar todos os dados do dashboard (FIX e Implementação)
   async getReportData(req, res) {
     try {
-      // aceita tanto GET (query) quanto POST (body)
       const raw = req.body || req.query || {};
 
-      // O frontend usa 'vendorId' (FilterBar). Aceitamos também 'ownerId' por compatibilidade.
       const vendorId = raw.vendorId ?? raw.ownerId ?? raw.ownerid ?? raw.owner_id ?? null;
       const startDate = raw.startDate ?? raw.dateStart ?? null;
       const endDate = raw.endDate ?? raw.dateEnd ?? null;
       const source = raw.source ?? raw.sources ?? 'all';
 
-      // Constrói o objeto de filtros no formato que o ReportDataService espera.
       const filters = {
         startDate: startDate || null,
         endDate: endDate || null,
         source: source || 'all',
-        // quando frontend enviar 'vendorId' ele ficará disponível; serviço decidirá se usa
         ownerId: vendorId === undefined ? null : vendorId
       };
 
       const userId = req.user?.id ?? null;
       const isAdmin = req.user?.role === 'Admin';
 
-      // DEBUG opcional (comente em produção)
-      // console.debug('getReportData -> filters:', filters, 'userId:', userId, 'isAdmin:', isAdmin);
-
-      const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
+      // 🚨 FIX CHAVE: Chama o método agregador que retorna todos os dados
+      const metrics = await ReportDataService.getAllDashboardData(filters, userId, isAdmin); 
+      
       return res.status(200).json({ success: true, data: metrics });
+
     } catch (error) {
-      console.error('Erro ao buscar dados do dashboard:', error);
-      return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados do dashboard.', details: error.message });
+      console.error('Erro ao buscar dados do dashboard (getReportData):', error);
+      // Retornar um erro mais descritivo no log do servidor
+      return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados do dashboard. Verifique o ReportDataService.', details: error.message });
     }
   }
 
+  // Rota para o NOVO Relatório Analítico de Atendimento
   async getAnalyticNotes(req, res) {
     try {
-      const { leadId } = req.params;
-      const notes = await ReportDataService.getAnalyticNotes(leadId);
-      return res.status(200).json({ success: true, data: notes || [] });
+      // Recebe leadId (para histórico completo) ou stage (para leads ativos na fase)
+      const { leadId } = req.params; 
+      const { stage } = req.query; 
+
+      // Permissão
+      const userId = req.user?.id ?? null;
+      const userRole = req.user?.role ?? 'User';
+
+      // Chama o serviço que decide qual relatório buscar
+      const analyticData = await ReportDataService.getAnalyticNotes(
+          leadId, 
+          stage, 
+          userRole, 
+          userId
+      );
+
+      return res.status(200).json({ success: true, data: analyticData });
+
     } catch (error) {
-      console.error('Erro ao buscar notas analíticas:', error);
-      res.status(500).json({ success: false, message: 'Erro interno ao buscar notas.' });
+      console.error('Erro ao buscar dados analíticos de atendimento:', error);
+      res.status(500).json({ success: false, message: 'Erro interno ao buscar notas analíticas.' });
     }
   }
-
+  
+  // Rota de Exportação CSV (Usando o serviço GsvGeneratorService)
   async exportCsv(req, res) {
     try {
       const filters = req.body.filters || req.query.filters || {};
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
-
-      const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
-      if (!leads || leads.length === 0) {
+      
+      // Assumindo que este método existe no ReportDataService
+      const dataToExport = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
+      
+      if (!dataToExport || dataToExport.length === 0) {
         return res.status(404).json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
       }
 
-      const workbook = new ExcelJS.Workbook();
-      const sheet = workbook.addWorksheet('Relatório de Leads');
-
-      sheet.columns = [
-        { header: 'ID', key: 'id', width: 10 },
-        { header: 'Nome', key: 'name', width: 30 },
-        { header: 'Telefone', key: 'phone', width: 15 },
-        { header: 'Email', key: 'email', width: 30 },
-        { header: 'Status', key: 'status', width: 15 },
-        { header: 'Origem', key: 'origin', width: 15 },
-        { header: 'Proprietário', key: 'owner_name', width: 25 },
-        { header: 'Consumo Médio (KW)', key: 'avg_consumption', width: 25 },
-        { header: 'Data de Criação', key: 'created_at', width: 20 }
-      ];
-
-      leads.forEach(lead => {
-        sheet.addRow({
-          id: lead.id,
-          name: lead.name,
-          phone: lead.phone,
-          email: lead.email,
-          status: lead.status,
-          origin: lead.origin,
-          owner_name: lead.owner_name,
-          avg_consumption: lead.avg_consumption || 0,
-          created_at: lead.created_at ? new Date(lead.created_at).toLocaleDateString('pt-BR') : ''
-        });
-      });
+      // 🚨 MUDANÇA: Delega a geração do CSV para o serviço
+      const csvString = CSVGeneratorService.generateLeadsCsv(dataToExport);
 
       res.setHeader('Content-Type', 'text/csv');
-      res.setHeader('Content-Disposition', `attachment; filename=leads_${new Date().toISOString().slice(0, 10)}.csv`);
-      await workbook.csv.write(res);
-      res.end();
+      res.setHeader('Content-Disposition', `attachment; filename=leads_report_${new Date().toISOString().slice(0, 10)}.csv`);
+      res.status(200).send(csvString);
+
     } catch (error) {
       console.error('Erro ao exportar CSV:', error);
       res.status(500).json({ success: false, message: 'Erro interno ao gerar CSV.' });
     }
   }
 
+  // Rota de Exportação PDF (Usando o serviço PdfGeneratorService)
   async exportPdf(req, res) {
     try {
       const filters = req.body.filters || req.query.filters || {};
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
-      const metrics = await ReportDataService.getDashboardMetrics(filters, userId, isAdmin);
-      const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
-      const prod = metrics.productivity;
-
-      const doc = new pdfKit();
-      const pdfChunks = [];
-      doc.on('data', c => pdfChunks.push(c));
-      doc.on('end', () => {
-        res.setHeader('Content-Type', 'application/pdf');
-        res.setHeader('Content-Disposition', `attachment; filename=relatorio_${new Date().toISOString().slice(0, 10)}.pdf`);
-        res.send(Buffer.concat(pdfChunks));
+      // Busca todos os dados necessários (métricas e leads)
+      const metrics = await ReportDataService.getAllDashboardData(filters, userId, isAdmin);
+      const leadsForPdf = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
+      
+      // 🚨 MUDANÇA: Delega a geração do PDF para o serviço (melhor para layout e quebra de página)
+      const pdfBuffer = await PDFGeneratorService.generateFullReportPdf({
+          metrics, 
+          leads: leadsForPdf, 
+          filters,
+          generatorName: req.user?.name || 'Admin',
       });
-
-      doc.fontSize(20).text('Relatório CRM - EconomizaSul', { align: 'left' });
-      doc.moveDown();
-      doc.fontSize(12).text(`Gerado em: ${new Date().toLocaleString('pt-BR')}`);
-      doc.moveDown();
-
-      doc.fontSize(14).text('Métricas de Produtividade');
-      doc.moveDown(0.5);
-
-      doc.fontSize(11);
-      doc.text(`Leads Ativos: ${prod.leadsActive}`);
-      doc.text(`Vendas Concluídas (Qtd): ${prod.totalWonCount}`);
-      doc.text(`Valor Total (kW): ${prod.totalWonValueKW?.toFixed(2).replace('.', ',') || '0,00'} kW`);
-      doc.text(`Taxa de Conversão: ${(prod.conversionRate * 100).toFixed(2).replace('.', ',')}%`);
-      doc.text(`Taxa de Perda: ${(prod.lossRate * 100).toFixed(2).replace('.', ',')}%`);
-      doc.text(`Tempo Médio de Fechamento: ${prod.avgClosingTimeDays.toFixed(1)} dias`);
-
-      if (leads && leads.length) {
-        doc.moveDown();
-        doc.fontSize(12).text(`Leads (${leads.length}):`);
-        doc.fontSize(10);
-        leads.slice(0, 20).forEach(l => {
-          doc.text(`${l.name} — ${l.status} — ${l.avg_consumption || 0} kW — ${l.owner_name}`);
-        });
-      }
-
-      doc.end();
+      
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=relatorio_completo_${new Date().toISOString().slice(0, 10)}.pdf`);
+      res.status(200).send(pdfBuffer);
+      
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
-      res.status(500).json({ success: false, message: 'Erro interno ao gerar PDF.' });
+      res.status(500).json({ success: false, message: 'Erro interno ao gerar PDF. Verifique o PdfGeneratorService.' });
     }
   }
 }
