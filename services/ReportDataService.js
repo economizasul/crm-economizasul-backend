@@ -1,5 +1,6 @@
 // services/ReportDataService.js
 const { pool } = require('../config/db');
+const { format } = require('date-fns'); 
 
 // ==========================================================
 // 🛠️ UTILS DE FILTRAGEM
@@ -16,9 +17,14 @@ const buildFilter = (filters, userId, isAdmin) => {
     // Pega as datas do frontend
     const { startDate, endDate, ownerId, source } = filters;
     
+    // 🚨 CORREÇÃO DE DATA: Garante que sempre haja uma data válida e estende a data final.
+    const today = format(new Date(), 'yyyy-MM-dd');
+    const start = startDate || today; 
+    const end = endDate || today;     
+
     // Extende as datas para cobrir o dia inteiro
-    const formattedStartDate = `${startDate} 00:00:00`;
-    const formattedEndDate = `${endDate} 23:59:59`;
+    const formattedStartDate = `${start} 00:00:00`;
+    const formattedEndDate = `${end} 23:59:59`;
     
     // Filtro de data obrigatório (usando a data de criação do lead)
     let whereClause = `WHERE created_at BETWEEN $1 AND $2`;
@@ -31,12 +37,12 @@ const buildFilter = (filters, userId, isAdmin) => {
         whereClause += ` AND owner_id = $${nextIndex++}`;
         values.push(userId);
     } else if (ownerId && ownerId !== 'all') {
-        // Admin ou usuário vê leads de um vendedor específico (se ownerId for passado)
+        // Admin pode filtrar por vendedor específico 
         whereClause += ` AND owner_id = $${nextIndex++}`;
-        values.push(ownerId);
+        values.push(typeof ownerId === 'string' ? parseInt(ownerId) : ownerId);
     }
-
-    // 2. Filtro por Origem/Fonte
+    
+    // 2. Filtro por Origem
     if (source && source !== 'all') {
         whereClause += ` AND origin = $${nextIndex++}`;
         values.push(source);
@@ -45,135 +51,189 @@ const buildFilter = (filters, userId, isAdmin) => {
     return { whereClause, values };
 };
 
+// ==========================================================
+// 📈 SERVIÇO DE DADOS DE RELATÓRIO (MÉTODOS AGORA DENTRO DA CLASSE)
+// ==========================================================
 
 class ReportDataService {
+    
+    /**
+     * Busca o resumo de Leads (Total, Ganhos, Perdidos) e métricas de Produtividade.
+     * @static
+     */
+    static async getSummaryAndProductivity(filters, userId, isAdmin) {
+        const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
+        const query = `
+            WITH FilteredLeads AS (
+                SELECT
+                    *,
+                    -- Calcula o tempo de fechamento em dias. NULL se não tiver sido ganho.
+                    EXTRACT(EPOCH FROM (date_won - created_at)) / 86400 AS time_to_close_days 
+                FROM leads 
+                ${whereClause}
+            )
+            SELECT 
+                COUNT(*) AS total_leads, -- Total de Leads no Filtro
+                
+                -- Ganhos (Won)
+                COUNT(*) FILTER (WHERE status = 'Fechado Ganho') AS total_won_count,
+                COALESCE(SUM(estimated_savings) FILTER (WHERE status = 'Fechado Ganho'), 0) AS total_won_value_savings,
+                COALESCE(SUM(avg_consumption) FILTER (WHERE status = 'Fechado Ganho'), 0) AS total_won_value_kw,
+
+                -- Perdidos (Lost)
+                COUNT(*) FILTER (WHERE status = 'Fechado Perdido') AS total_lost_count,
+                
+                -- Conversão/Perda
+                CAST(COUNT(*) FILTER (WHERE status = 'Fechado Ganho') AS NUMERIC) / NULLIF(COUNT(*), 0) AS conversion_rate,
+                CAST(COUNT(*) FILTER (WHERE status = 'Fechado Perdido') AS NUMERIC) / NULLIF(COUNT(*), 0) AS loss_rate,
+                
+                -- Tempo de Fechamento (Média em dias)
+                COALESCE(AVG(time_to_close_days) FILTER (WHERE status = 'Fechado Ganho'), 0) AS avg_closing_time_days
+                
+            FROM FilteredLeads;
+        `;
+
+        const result = await pool.query(query, values);
+        
+        // Mapeamento e parse do resultado (garante que os números são tipos JS)
+        const row = result.rows[0] || {};
+        return {
+            totalLeads: parseInt(row.total_leads || 0),
+            totalWonCount: parseInt(row.total_won_count || 0),
+            totalWonValueSavings: parseFloat(row.total_won_value_savings || 0),
+            totalWonValueKW: parseFloat(row.total_won_value_kw || 0),
+            totalLostCount: parseInt(row.total_lost_count || 0),
+            
+            conversionRate: parseFloat(row.conversion_rate || 0),
+            lossRate: parseFloat(row.loss_rate || 0),
+
+            avgClosingTimeDays: parseFloat(row.avg_closing_time_days || 0),
+        };
+    }
 
     /**
-     * 🟢 Função principal para buscar todas as métricas do Dashboard.
+     * Busca a distribuição de leads pelo status (funil).
+     * @static
+     */
+    static async getFunnelData(filters, userId, isAdmin) {
+        const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
+        const query = `
+            SELECT 
+                status,
+                COUNT(*) AS count
+            FROM leads 
+            ${whereClause}
+            GROUP BY status
+            ORDER BY count DESC;
+        `;
+
+        const result = await pool.query(query, values);
+        
+        return result.rows.map(row => ({
+            stageName: row.status,
+            count: parseInt(row.count)
+        }));
+    }
+
+    /**
+     * Busca a análise dos motivos de perda.
+     * @static
+     */
+    static async getLostReasons(filters, userId, isAdmin) {
+        const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
+        // 1. Contagem total de perdidos (para o cálculo da porcentagem no frontend)
+        const totalLostQuery = `
+            SELECT COUNT(*) AS total_lost 
+            FROM leads 
+            ${whereClause} AND status = 'Fechado Perdido';
+        `;
+        const totalLostResult = await pool.query(totalLostQuery, values);
+        const totalLostCount = parseInt(totalLostResult.rows[0]?.total_lost || 0);
+
+        // 2. Contagem por motivo de perda
+        const reasonsQuery = `
+            SELECT 
+                reason_for_loss AS reason,
+                COUNT(*) AS count
+            FROM leads 
+            ${whereClause} AND status = 'Fechado Perdido' AND reason_for_loss IS NOT NULL
+            GROUP BY reason_for_loss
+            ORDER BY count DESC;
+        `;
+
+        const reasonsResult = await pool.query(reasonsQuery, values);
+        
+        const lostReasonsData = {
+            reasons: reasonsResult.rows.map(row => ({
+                reason: row.reason,
+                count: parseInt(row.count)
+            })),
+            totalLost: totalLostCount
+        };
+
+        return lostReasonsData;
+    }
+
+
+    /**
+     * Busca todos os dados necessários para o Dashboard de Relatórios em uma única chamada.
+     * @static
      */
     static async getAllDashboardData(filters, userId, isAdmin) {
-        
-        const { whereClause: baseFilter, values: baseValues } = buildFilter(filters, userId, isAdmin);
-        
         try {
-            // ----------------------------------------------------
-            // 1. MÉTRICAS DE PRODUTIVIDADE E KPIS (em uma única query)
-            // ----------------------------------------------------
-            const metricsQuery = `
-                SELECT
-                    -- Leads Ativos (status != Ganho/Perdido)
-                    COUNT(*) FILTER (WHERE l.status NOT IN ('Fechado Ganho', 'Fechado Perdido')) AS leads_active,
-                    -- Total de Leads Criados no Período
-                    COUNT(*) AS total_leads_created,
-                    
-                    -- Vendas Ganhas
-                    COUNT(*) FILTER (WHERE l.status = 'Fechado Ganho') AS total_won_count,
-                    COALESCE(SUM(l.avg_consumption) FILTER (WHERE l.status = 'Fechado Ganho'), 0) AS total_won_value_kw,
-
-                    -- Vendas Perdidas
-                    COUNT(*) FILTER (WHERE l.status = 'Fechado Perdido') AS total_lost_count,
-                    
-                    -- Tempo Médio de Fechamento (data_won - created_at) em segundos
-                    COALESCE(AVG(EXTRACT(EPOCH FROM (l.date_won - l.created_at))) FILTER (WHERE l.status = 'Fechado Ganho'), 0) AS avg_closing_time_seconds
-                FROM leads l
-                ${baseFilter};
-            `;
+            // As queries são executadas em paralelo
+            const [
+                summaryAndProd, 
+                funnelData, 
+                lostReasons,
+            ] = await Promise.all([
+                // Chamadas usando 'this.' funcionam corretamente para métodos estáticos
+                this.getSummaryAndProductivity(filters, userId, isAdmin),
+                this.getFunnelData(filters, userId, isAdmin),
+                this.getLostReasons(filters, userId, isAdmin),
+            ]);
             
-            const metricsResult = await pool.query(metricsQuery, baseValues);
-            const raw = metricsResult.rows[0] || {};
-            
-            const totalLeadsCreated = parseInt(raw.total_leads_created || 0);
-            const totalWonCount = parseInt(raw.total_won_count || 0);
-            const totalLostCount = parseInt(raw.total_lost_count || 0);
-            
-            // Cálculos
-            const productivity = {
-                leadsActive: parseInt(raw.leads_active || 0),
-                totalLeads: totalLeadsCreated,
-                totalWonCount: totalWonCount,
-                totalWonValueKW: parseFloat(raw.total_won_value_kw || 0),
-                totalLostCount: totalLostCount,
-                // Taxas (Conversão e Perda) são de 0 a 1.
-                conversionRate: totalLeadsCreated > 0 ? (totalWonCount / totalLeadsCreated) : 0, 
-                lossRate: totalLeadsCreated > 0 ? (totalLostCount / totalLeadsCreated) : 0,
-                // Converte segundos para dias (86400 segundos em 1 dia)
-                avgClosingTimeDays: parseFloat(raw.avg_closing_time_seconds || 0) / 86400, 
-            };
-            
-            // ----------------------------------------------------
-            // 2. DADOS DO FUNIL DE VENDAS (Agrupado por Status Atual)
-            // ----------------------------------------------------
-            const funnelQuery = `
-                SELECT 
-                    status AS stageName,
-                    COUNT(*) AS count
-                FROM leads
-                ${baseFilter}
-                GROUP BY status
-                ORDER BY count DESC;
-            `;
-            const funnelResult = await pool.query(funnelQuery, baseValues);
-            const funnel = funnelResult.rows.map(row => ({
-                stageName: row.stagename,
-                count: parseInt(row.count)
-            }));
-
-
-            // ----------------------------------------------------
-            // 3. ANÁLISE DE MOTIVOS DE PERDA (Lost Reasons)
-            // ----------------------------------------------------
-            const lostReasonsQuery = `
-                SELECT 
-                    reason_for_loss AS reason,
-                    COUNT(*) AS count
-                FROM leads
-                ${baseFilter}
-                AND status = 'Fechado Perdido'
-                AND reason_for_loss IS NOT NULL AND reason_for_loss != ''
-                GROUP BY reason_for_loss
-                ORDER BY count DESC;
-            `;
-            const lostReasonsResult = await pool.query(lostReasonsQuery, baseValues);
-            
-            const lostReasonsData = {
-                reasons: lostReasonsResult.rows.map(row => ({
-                    reason: row.reason,
-                    count: parseInt(row.count)
-                })),
-                totalLost: totalLostCount // Reutiliza a contagem geral
-            };
-            
+            // Combina os resultados
             return {
-                productivity,
-                funnel,
-                lostReasons: lostReasonsData,
-                // dailyActivity: [], 
+                productivity: {
+                    ...summaryAndProd 
+                },
+                funnel: funnelData,
+                lostReasons: lostReasons,
+                dailyActivity: [], // Mantenha como array vazio se não estiver implementado
+                forecasting: {
+                    forecastedKwWeighted: 0 
+                }
             };
-
+            
         } catch (error) {
-            console.error('Erro ao buscar todos os dados do dashboard:', error);
-            throw error;
+            console.error('CRITICAL ERROR in ReportDataService.getAllDashboardData:', error);
+            throw new Error('Falha ao gerar dados de relatório: ' + error.message);
         }
     }
     
     /**
      * Método auxiliar para buscar leads brutos para a exportação CSV/PDF.
+     * @static
      */
     static async getLeadsForExport(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
         
-        const exportQuery = `
+        const query = `
             SELECT 
-                l.*,
+                l.*, 
                 u.name AS owner_name
             FROM leads l
-            LEFT JOIN users u ON u.id = l.owner_id
+            LEFT JOIN users u ON l.owner_id = u.id
             ${whereClause}
             ORDER BY l.created_at DESC;
         `;
         
         try {
-            const result = await pool.query(exportQuery, values);
+            const result = await pool.query(query, values);
             return result.rows;
         } catch (error) {
             console.error('Erro ao buscar leads para exportação:', error);
