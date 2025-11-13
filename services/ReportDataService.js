@@ -1,27 +1,14 @@
 // services/ReportDataService.js
 const { pool } = require('../config/db');
-// O require('date-fns') foi removido para evitar a dependência e o crash.
 
 // ==========================================================
-// 🛠️ UTILS DE FILTRAGEM
+// 🛠️ UTILS DE FILTRAGEM (ROBUSTO)
 // ==========================================================
 
-/**
- * Converte um objeto Date em formato YYYY-MM-DD (nativa, sem dependências).
- */
-const formatDate = (date) => {
-    const d = new Date(date);
-    // Extrai e formata Mês e Dia para garantir que tenham dois dígitos (ex: 01)
-    let month = '' + (d.getMonth() + 1);
-    let day = '' + d.getDate();
-    const year = d.getFullYear();
-
-    if (month.length < 2) 
-        month = '0' + month;
-    if (day.length < 2) 
-        day = '0' + day;
-
-    return [year, month, day].join('-'); // Retorna 'YYYY-MM-DD'
+// Função auxiliar para gerar 'YYYY-MM-DD' de forma nativa e segura.
+const getTodayDateString = () => {
+    // Usa toISOString() e corta no 'T' para obter 'YYYY-MM-DD'.
+    return new Date().toISOString().split('T')[0];
 };
 
 
@@ -33,15 +20,16 @@ const formatDate = (date) => {
  * @returns {Object} { whereClause, values }
  */
 const buildFilter = (filters, userId, isAdmin) => {
-    // Pega as datas do frontend
-    const { startDate, endDate, ownerId, source } = filters;
+    // 🚨 CORREÇÃO: Usa um fallback seguro ({}) para evitar quebrar com 'filters' nulo/undefined
+    const { startDate, endDate, ownerId, source } = filters || {};
     
-    // 🚨 CORREÇÃO DE DATA: Usa a função formatDate nativa para criar a data padrão
-    const today = formatDate(new Date()); 
-    const start = startDate || today; // Data inicial, ou hoje como padrão
-    const end = endDate || today;     // Data final, ou hoje como padrão
+    const todayString = getTodayDateString(); 
+    
+    // Usa o valor do filtro ou o dia de hoje como padrão ('YYYY-MM-DD')
+    const start = startDate || todayString;
+    const end = endDate || todayString;
 
-    // CRÍTICO: Estende as datas para cobrir o dia inteiro (00:00:00 até 23:59:59)
+    // CRÍTICO: Estende a data final para cobrir o dia inteiro (00:00:00 até 23:59:59)
     const formattedStartDate = `${start} 00:00:00`;
     const formattedEndDate = `${end} 23:59:59`;
     
@@ -209,8 +197,9 @@ class ReportDataService {
             };
             
         } catch (error) {
-            console.error('CRITICAL ERROR in ReportDataService.getAllDashboardData:', error);
-            throw new Error('Falha ao gerar dados de relatório: ' + error.message);
+            // Loga o erro de forma clara para que o usuário possa ver no console do servidor
+            console.error('FATAL ERROR in ReportDataService.getAllDashboardData:', error);
+            throw new Error('Falha crítica no serviço de dados de relatório. Verifique os logs do servidor.');
         }
     }
     
