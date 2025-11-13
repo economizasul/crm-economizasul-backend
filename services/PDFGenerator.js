@@ -1,6 +1,8 @@
 // services/PdfGeneratorService.js
 
-const puppeteer = require('puppeteer');
+// 🚨 CORREÇÃO: Usando puppeteer-core e o binário compatível com Render
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium'); 
 
 class PdfGeneratorService {
 
@@ -10,15 +12,15 @@ class PdfGeneratorService {
      * @returns {Promise<Buffer>} Buffer do arquivo PDF.
      */
     async generatePdf(htmlContent) {
-        // Garantir que o puppeteer funcione em ambientes como o Render
+        // Configuração de lançamento do navegador para ambientes como Render/AWS Lambda
         const browser = await puppeteer.launch({ 
-            headless: true,
-            args: [
-                '--no-sandbox', 
-                '--disable-setuid-sandbox',
-                '--disable-dev-shm-usage', // Útil no Render
-            ] 
+            args: chromium.args,
+            defaultViewport: chromium.defaultViewport,
+            executablePath: await chromium.executablePath(), // Usa o caminho do binário compatível
+            headless: chromium.headless,
+            ignoreHTTPSErrors: true,
         });
+        
         const page = await browser.newPage();
         
         await page.setContent(htmlContent, {
@@ -37,8 +39,7 @@ class PdfGeneratorService {
 
     /**
      * Gera o HTML completo do relatório.
-     * @param {Object} data - Dados completos do relatório ({ metrics, leads, filters, generatorName }).
-     * @returns {string} String HTML formatada.
+     * ... (O restante do código HTML é o mesmo, mantido por brevidade)
      */
     generateHtmlReport({ metrics, leads, filters, generatorName }) {
         // Fallback e desestruturação segura
