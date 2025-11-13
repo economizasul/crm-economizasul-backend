@@ -1,10 +1,29 @@
 // services/ReportDataService.js
 const { pool } = require('../config/db');
-const { format } = require('date-fns'); 
+// O require('date-fns') foi removido para evitar a dependência e o crash.
 
 // ==========================================================
 // 🛠️ UTILS DE FILTRAGEM
 // ==========================================================
+
+/**
+ * Converte um objeto Date em formato YYYY-MM-DD (nativa, sem dependências).
+ */
+const formatDate = (date) => {
+    const d = new Date(date);
+    // Extrai e formata Mês e Dia para garantir que tenham dois dígitos (ex: 01)
+    let month = '' + (d.getMonth() + 1);
+    let day = '' + d.getDate();
+    const year = d.getFullYear();
+
+    if (month.length < 2) 
+        month = '0' + month;
+    if (day.length < 2) 
+        day = '0' + day;
+
+    return [year, month, day].join('-'); // Retorna 'YYYY-MM-DD'
+};
+
 
 /**
  * Constrói a cláusula WHERE e os valores para as queries SQL.
@@ -17,12 +36,12 @@ const buildFilter = (filters, userId, isAdmin) => {
     // Pega as datas do frontend
     const { startDate, endDate, ownerId, source } = filters;
     
-    // 🚨 CORREÇÃO DE DATA: Garante que sempre haja uma data válida e estende a data final.
-    const today = format(new Date(), 'yyyy-MM-dd');
-    const start = startDate || today; 
-    const end = endDate || today;     
+    // 🚨 CORREÇÃO DE DATA: Usa a função formatDate nativa para criar a data padrão
+    const today = formatDate(new Date()); 
+    const start = startDate || today; // Data inicial, ou hoje como padrão
+    const end = endDate || today;     // Data final, ou hoje como padrão
 
-    // Extende as datas para cobrir o dia inteiro
+    // CRÍTICO: Estende as datas para cobrir o dia inteiro (00:00:00 até 23:59:59)
     const formattedStartDate = `${start} 00:00:00`;
     const formattedEndDate = `${end} 23:59:59`;
     
@@ -33,11 +52,9 @@ const buildFilter = (filters, userId, isAdmin) => {
 
     // 1. Filtro por Vendedor (Owner)
     if (!isAdmin) {
-        // Usuário normal vê apenas seus leads
         whereClause += ` AND owner_id = $${nextIndex++}`;
         values.push(userId);
     } else if (ownerId && ownerId !== 'all') {
-        // Admin pode filtrar por vendedor específico 
         whereClause += ` AND owner_id = $${nextIndex++}`;
         values.push(typeof ownerId === 'string' ? parseInt(ownerId) : ownerId);
     }
@@ -52,7 +69,7 @@ const buildFilter = (filters, userId, isAdmin) => {
 };
 
 // ==========================================================
-// 📈 SERVIÇO DE DADOS DE RELATÓRIO (MÉTODOS AGORA DENTRO DA CLASSE)
+// 📈 SERVIÇO DE DADOS DE RELATÓRIO
 // ==========================================================
 
 class ReportDataService {
@@ -68,35 +85,24 @@ class ReportDataService {
             WITH FilteredLeads AS (
                 SELECT
                     *,
-                    -- Calcula o tempo de fechamento em dias. NULL se não tiver sido ganho.
                     EXTRACT(EPOCH FROM (date_won - created_at)) / 86400 AS time_to_close_days 
                 FROM leads 
                 ${whereClause}
             )
             SELECT 
-                COUNT(*) AS total_leads, -- Total de Leads no Filtro
-                
-                -- Ganhos (Won)
+                COUNT(*) AS total_leads, 
                 COUNT(*) FILTER (WHERE status = 'Fechado Ganho') AS total_won_count,
                 COALESCE(SUM(estimated_savings) FILTER (WHERE status = 'Fechado Ganho'), 0) AS total_won_value_savings,
                 COALESCE(SUM(avg_consumption) FILTER (WHERE status = 'Fechado Ganho'), 0) AS total_won_value_kw,
-
-                -- Perdidos (Lost)
                 COUNT(*) FILTER (WHERE status = 'Fechado Perdido') AS total_lost_count,
-                
-                -- Conversão/Perda
                 CAST(COUNT(*) FILTER (WHERE status = 'Fechado Ganho') AS NUMERIC) / NULLIF(COUNT(*), 0) AS conversion_rate,
                 CAST(COUNT(*) FILTER (WHERE status = 'Fechado Perdido') AS NUMERIC) / NULLIF(COUNT(*), 0) AS loss_rate,
-                
-                -- Tempo de Fechamento (Média em dias)
                 COALESCE(AVG(time_to_close_days) FILTER (WHERE status = 'Fechado Ganho'), 0) AS avg_closing_time_days
-                
             FROM FilteredLeads;
         `;
 
         const result = await pool.query(query, values);
         
-        // Mapeamento e parse do resultado (garante que os números são tipos JS)
         const row = result.rows[0] || {};
         return {
             totalLeads: parseInt(row.total_leads || 0),
@@ -104,10 +110,8 @@ class ReportDataService {
             totalWonValueSavings: parseFloat(row.total_won_value_savings || 0),
             totalWonValueKW: parseFloat(row.total_won_value_kw || 0),
             totalLostCount: parseInt(row.total_lost_count || 0),
-            
             conversionRate: parseFloat(row.conversion_rate || 0),
             lossRate: parseFloat(row.loss_rate || 0),
-
             avgClosingTimeDays: parseFloat(row.avg_closing_time_days || 0),
         };
     }
@@ -144,7 +148,6 @@ class ReportDataService {
     static async getLostReasons(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
-        // 1. Contagem total de perdidos (para o cálculo da porcentagem no frontend)
         const totalLostQuery = `
             SELECT COUNT(*) AS total_lost 
             FROM leads 
@@ -153,7 +156,6 @@ class ReportDataService {
         const totalLostResult = await pool.query(totalLostQuery, values);
         const totalLostCount = parseInt(totalLostResult.rows[0]?.total_lost || 0);
 
-        // 2. Contagem por motivo de perda
         const reasonsQuery = `
             SELECT 
                 reason_for_loss AS reason,
@@ -184,26 +186,23 @@ class ReportDataService {
      */
     static async getAllDashboardData(filters, userId, isAdmin) {
         try {
-            // As queries são executadas em paralelo
             const [
                 summaryAndProd, 
                 funnelData, 
                 lostReasons,
             ] = await Promise.all([
-                // Chamadas usando 'this.' funcionam corretamente para métodos estáticos
                 this.getSummaryAndProductivity(filters, userId, isAdmin),
                 this.getFunnelData(filters, userId, isAdmin),
                 this.getLostReasons(filters, userId, isAdmin),
             ]);
             
-            // Combina os resultados
             return {
                 productivity: {
                     ...summaryAndProd 
                 },
                 funnel: funnelData,
                 lostReasons: lostReasons,
-                dailyActivity: [], // Mantenha como array vazio se não estiver implementado
+                dailyActivity: [], 
                 forecasting: {
                     forecastedKwWeighted: 0 
                 }
