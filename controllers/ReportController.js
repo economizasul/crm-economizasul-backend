@@ -1,9 +1,9 @@
 // controllers/ReportController.js
 const { pool } = require('../config/db');
 const ReportDataService = require('../services/ReportDataService');
-// Assumindo que você tem serviços dedicados (GsvGeneratorService e PdfGeneratorService)
-const CSVGeneratorService = require('../services/GsvGeneratorService'); 
-const PDFGeneratorService = require('../services/PdfGeneratorService'); 
+// 🚨 CORREÇÃO: Usando seu nome de arquivo real: CsvGeneratorService
+const CsvGeneratorService = require('../services/CsvGeneratorService'); 
+const PdfGeneratorService = require('../services/PdfGeneratorService'); 
 
 class ReportController {
   constructor() {
@@ -50,14 +50,13 @@ class ReportController {
       const userId = req.user?.id ?? null;
       const isAdmin = req.user?.role === 'Admin';
 
-      // 🚨 FIX CHAVE: Chama o método agregador que retorna todos os dados
+      // Chama o método agregador que retorna todos os dados
       const metrics = await ReportDataService.getAllDashboardData(filters, userId, isAdmin); 
       
       return res.status(200).json({ success: true, data: metrics });
 
     } catch (error) {
       console.error('Erro ao buscar dados do dashboard (getReportData):', error);
-      // Retornar um erro mais descritivo no log do servidor
       return res.status(500).json({ success: false, message: 'Erro interno ao buscar dados do dashboard. Verifique o ReportDataService.', details: error.message });
     }
   }
@@ -89,26 +88,28 @@ class ReportController {
     }
   }
   
-  // Rota de Exportação CSV (Usando o serviço GsvGeneratorService)
+  // Rota de Exportação CSV
   async exportCsv(req, res) {
+    let url = null;
     try {
       const filters = req.body.filters || req.query.filters || {};
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
       
-      // Assumindo que este método existe no ReportDataService
-      const dataToExport = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
+      // Busca dados
+      const leadsToExport = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       
-      if (!dataToExport || dataToExport.length === 0) {
+      if (!leadsToExport || leadsToExport.length === 0) {
         return res.status(404).json({ success: false, message: 'Nenhum lead encontrado para exportação.' });
       }
 
-      // 🚨 MUDANÇA: Delega a geração do CSV para o serviço
-      const csvString = CSVGeneratorService.generateLeadsCsv(dataToExport);
+      // Delega a geração do CSV para o serviço
+      const csvString = await CsvGeneratorService.exportLeads(leadsToExport); // Chamo o método que está no seu arquivo
 
-      res.setHeader('Content-Type', 'text/csv');
+      res.setHeader('Content-Type', 'text/csv; charset=UTF-8');
       res.setHeader('Content-Disposition', `attachment; filename=leads_report_${new Date().toISOString().slice(0, 10)}.csv`);
-      res.status(200).send(csvString);
+      // Adiciona BOM para UTF-8 no Excel
+      res.status(200).send('\ufeff' + csvString); 
 
     } catch (error) {
       console.error('Erro ao exportar CSV:', error);
@@ -116,7 +117,7 @@ class ReportController {
     }
   }
 
-  // Rota de Exportação PDF (Usando o serviço PdfGeneratorService)
+  // Rota de Exportação PDF
   async exportPdf(req, res) {
     try {
       const filters = req.body.filters || req.query.filters || {};
@@ -127,12 +128,12 @@ class ReportController {
       const metrics = await ReportDataService.getAllDashboardData(filters, userId, isAdmin);
       const leadsForPdf = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       
-      // 🚨 MUDANÇA: Delega a geração do PDF para o serviço (melhor para layout e quebra de página)
-      const pdfBuffer = await PDFGeneratorService.generateFullReportPdf({
+      // Delega a geração do PDF para o serviço (usando seu método generateFullReportPdf)
+      const pdfBuffer = await PdfGeneratorService.generateFullReportPdf({
           metrics, 
           leads: leadsForPdf, 
-          filters,
-          generatorName: req.user?.name || 'Admin',
+          filters: req.body.filters || req.query.filters, // Passa os filtros originais para o header do PDF
+          generatorName: req.user?.name || 'Sistema',
       });
       
       res.setHeader('Content-Type', 'application/pdf');
@@ -141,7 +142,7 @@ class ReportController {
       
     } catch (error) {
       console.error('Erro ao exportar PDF:', error);
-      res.status(500).json({ success: false, message: 'Erro interno ao gerar PDF. Verifique o PdfGeneratorService.' });
+      res.status(500).json({ success: false, message: 'Erro interno ao gerar PDF. Verifique o PdfGeneratorService e a dependência puppeteer.' });
     }
   }
 }
