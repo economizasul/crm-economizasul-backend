@@ -1,196 +1,253 @@
-// src/services/PdfGeneratorService.js
-const puppeteer = require('puppeteer');
-// Nota: Certifique-se de instalar 'puppeteer' e que seu ambiente Render o suporte (headless Chrome)
+// services/PdfGeneratorService.js
+
+const puppeteer = require('puppeteer-core');
+const chromium = require('@sparticuz/chromium'); 
 
 class PdfGeneratorService {
 
     /**
-     * Gera um PDF a partir de um conteúdo HTML.
+     * Gera um PDF a partir de um conteúdo HTML. (Garantindo args para Render)
      * @param {string} htmlContent - Conteúdo HTML do relatório.
      * @returns {Promise<Buffer>} Buffer do arquivo PDF.
      */
     async generatePdf(htmlContent) {
-        const browser = await puppeteer.launch({ 
-            headless: true,
-            // Necessário em alguns ambientes como Render para encontrar o Chrome
-            args: ['--no-sandbox', '--disable-setuid-sandbox'] 
-        });
-        const page = await browser.newPage();
+        console.log('Iniciando Puppeteer com configuração para Render...');
         
-        await page.setContent(htmlContent, {
-             waitUntil: 'networkidle0' 
-        });
+        try {
+            // Configuração de lançamento do navegador para ambientes como Render/AWS Lambda
+            const browser = await puppeteer.launch({ 
+                args: chromium.args,
+                defaultViewport: chromium.defaultViewport,
+                executablePath: await chromium.executablePath(),
+                headless: chromium.headless,
+                ignoreHTTPSErrors: true,
+                // Aumenta o tempo de espera para o navegador abrir
+                timeout: 30000, // 30 segundos de timeout
+            });
+            
+            const page = await browser.newPage();
+            
+            await page.setContent(htmlContent, {
+                 waitUntil: 'networkidle0'
+            });
 
-        const pdfBuffer = await page.pdf({
-            format: 'A4',
-            printBackground: true,
-            margin: { top: '1in', right: '1in', bottom: '1in', left: '1in' }
-        });
+            const pdfBuffer = await page.pdf({
+                format: 'A4',
+                printBackground: true,
+                margin: { top: '1in', right: '0.8in', bottom: '0.8in', left: '0.8in' }
+            });
 
-        await browser.close();
-        return pdfBuffer;
+            await browser.close();
+            console.log('PDF gerado com sucesso.');
+            return pdfBuffer;
+            
+        } catch (error) {
+            console.error('ERRO CRÍTICO NA GERAÇÃO DE PDF (PUPPETEER):', error.message);
+            // Propaga o erro para o controller retornar o 500
+            throw error; 
+        }
     }
 
     /**
-     * Gera o conteúdo HTML completo do relatório com todas as métricas e leads.
-     * @param {Object} data - Objeto contendo { metrics: { summary, productivity, funnel, lostReasons, ... }, leads, filters, generatorName }.
-     * @returns {Promise<Buffer>} Buffer do arquivo PDF.
+     * Gera o HTML completo do relatório.
+     * @param {Object} data - Dados completos do relatório ({ metrics, leads, filters, generatorName }).
+     * @returns {string} String HTML formatada.
      */
-    async generateFullReportPdf({ metrics, leads, filters, generatorName }) {
-        const htmlContent = this.createReportHtml(metrics, leads, filters, generatorName);
-        return this.generatePdf(htmlContent);
-    }
+    generateHtmlReport({ metrics, leads, filters, generatorName }) {
+        // Fallback e desestruturação segura
+        const { productivity = {}, funnel = [], lostReasons = {} } = metrics || {};
 
-    createReportHtml(metrics, leads, filters, generatorName) {
-        // Formatação de números
-        const formatKw = (kw) => Number(kw).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + ' kW';
-        const formatPct = (pct) => Number(pct).toLocaleString('pt-BR', { maximumFractionDigits: 2 }) + '%';
-        const formatDate = (date) => date ? new Date(date).toLocaleDateString('pt-BR') : 'N/A';
-        const formatDays = (days) => Number(days).toFixed(1) + ' dias';
-        const formatCurrency = (val) => 'R$ ' + Number(val).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-
-        // --- 1. Resumo e KPIs ---
-        const summaryHtml = `
-            <h3>KPIs e Resumo Global</h3>
-            <div class="kpis">
-                <div><span>Total de Leads</span><p>${metrics.summary.totalLeads}</p></div>
-                <div><span>Leads Ativos</span><p>${metrics.summary.activeLeads}</p></div>
-                <div><span>Vendas (Qtd)</span><p>${metrics.summary.wonLeadsQty}</p></div>
-                <div><span>Total Vendido</span><p>${formatKw(metrics.summary.totalKwWon)}</p></div>
-                <div><span>Taxa de Conversão</span><p>${formatPct(metrics.summary.conversionRate)}</p></div>
-                <div><span>T. Médio Fechamento</span><p>${formatDays(metrics.summary.avgTimeToWinDays)}</p></div>
-                <div><span>Previsão Ponderada</span><p>${formatKw(metrics.forecasting.forecastedKwWeighted)}</p></div>
-            </div>
-        `;
-
-        // --- 2. Tabela de Produtividade (Melhores Vendedores) ---
-        const productivityRows = metrics.productivity.map(p => `
+        // ==========================================================
+        // UTILS DE FORMATAÇÃO
+        // ==========================================================
+        const formatKw = (value) => value ? `${Number(value).toLocaleString('pt-BR', { maximumFractionDigits: 0 })} KW` : '0 KW';
+        const formatPercent = (value) => value ? `${(value * 100).toFixed(1).replace('.', ',')}%` : '0%';
+        const formatDate = (dateString) => dateString ? new Date(dateString).toLocaleDateString('pt-BR') : 'N/A';
+        const formatDays = (value) => value ? `${Number(value).toFixed(1).replace('.', ',')} dias` : 'N/A';
+        
+        // ==========================================================
+        // 1. SEÇÃO DE PRODUTIVIDADE E KPIS
+        // ==========================================================
+        const productivityMetrics = [
+            { label: 'Leads Ativos', value: productivity.leadsActive?.toLocaleString('pt-BR') || '0' },
+            { label: 'Total de Leads Criados', value: productivity.totalLeads?.toLocaleString('pt-BR') || '0' },
+            { label: 'Vendas (Qtd)', value: productivity.totalWonCount?.toLocaleString('pt-BR') || '0' },
+            { label: 'Vendas (KW)', value: formatKw(productivity.totalWonValueKW) },
+            { label: 'Taxa de Conversão', value: formatPercent(productivity.conversionRate) },
+            { label: 'Taxa de Perda (Loss Rate)', value: formatPercent(productivity.lossRate) },
+            { label: 'Tempo Médio de Fechamento', value: formatDays(productivity.avgClosingTimeDays) },
+        ];
+        
+        const productivityRows = productivityMetrics.map(m => `
             <tr>
-                <td>${p.vendorName}</td>
-                <td>${p.totalLeadsPeriod}</td>
-                <td>${p.wonLeadsQty}</td>
-                <td>${formatKw(p.totalKwWon)}</td>
-                <td>${formatPct(p.conversionRate)}</td>
-                <td>${formatDays(p.avgTimeToWinDays)}</td>
+                <td>${m.label}</td>
+                <td class="value">${m.value}</td>
             </tr>
         `).join('');
 
-        const productivityHtml = `
-            <h3>Produtividade do Vendedor (Top Performance)</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Vendedor</th>
-                        <th>Leads no Período</th>
-                        <th>Vendas (Qtd)</th>
-                        <th>Vendas (kW)</th>
-                        <th>Taxa de Conversão</th>
-                        <th>T. Fechamento</th>
-                    </tr>
-                </thead>
-                <tbody>${productivityRows}</tbody>
-            </table>
-        `;
+        // ==========================================================
+        // 2. SEÇÃO DE FUNIL DE VENDAS
+        // ==========================================================
+        const totalLeadsFunnel = funnel.reduce((sum, s) => sum + s.count, 0);
 
-        // --- 3. Tabela de Perdas (Churn) ---
-        const lostReasonsRows = metrics.lostReasons.map(l => `
-            <tr>
-                <td>${l.reason}</td>
-                <td>${l.count}</td>
-                <td>${formatPct(l.percentage)}</td>
-                <td>${formatKw(l.potentialKwLost)}</td>
-            </tr>
-        `).join('');
-
-        const lostReasonsHtml = `
-            <h3>Análise de Perdas (Churn)</h3>
-            <table>
-                <thead>
+        const funnelRows = funnel && funnel.length > 0
+            ? funnel.map(stage => {
+                const percentage = totalLeadsFunnel > 0 ? (stage.count / totalLeadsFunnel) * 100 : 0;
+                return `
                     <tr>
-                        <th>Motivo da Perda</th>
-                        <th>Contagem</th>
-                        <th>% Total Perda</th>
-                        <th>kW Potenciais Perdidos</th>
+                        <td>${stage.stageName}</td>
+                        <td class="value">${stage.count.toLocaleString('pt-BR')}</td>
+                        <td class="value">${percentage.toFixed(1).replace('.', ',')}%</td>
                     </tr>
-                </thead>
-                <tbody>${lostReasonsRows}</tbody>
-            </table>
+                `;
+            }).join('')
+            : '<tr><td colspan="3">Nenhum dado de funil encontrado.</td></tr>';
+
+        // ==========================================================
+        // 3. SEÇÃO DE MOTIVOS DE PERDA
+        // ==========================================================
+        const totalLost = lostReasons.totalLost || 0;
+        const lostReasonsRows = lostReasons.reasons && lostReasons.reasons.length > 0
+            ? lostReasons.reasons.map(item => {
+                const percentage = (item.count / totalLost) * 100;
+                return `
+                    <tr>
+                        <td>${item.reason || 'Não Especificado'}</td>
+                        <td class="value">${item.count.toLocaleString('pt-BR')}</td>
+                        <td class="value">${percentage.toFixed(1).replace('.', ',')}%</td>
+                    </tr>
+                `;
+            }).join('')
+            : `<tr><td colspan="3">Nenhum lead perdido no período. (Total de Perdidos: ${totalLost})</td></tr>`;
+
+
+        // ==========================================================
+        // 4. SEÇÃO DE LEADS DETALHADOS (Tabela Principal)
+        // ==========================================================
+        const leadsTableHeaders = `
+            <thead>
+                <tr class="header-row">
+                    <th>ID</th>
+                    <th>Nome</th>
+                    <th>Status</th>
+                    <th>Proprietário</th>
+                    <th>Origem</th>
+                    <th>KW Estimado</th>
+                    <th>Criado em</th>
+                </tr>
+            </thead>
         `;
         
-        // --- 4. Tabela de Leads (Detalhes para Exportação) ---
-        const leadsRows = leads.map(l => `
-            <tr>
-                <td>${l.name}</td>
-                <td>${l.status}</td>
-                <td>${l.origin}</td>
-                <td>${l.owner_name}</td>
-                <td>${formatKw(l.avg_consumption)}</td>
-                <td>${l.reason_for_loss || 'N/A'}</td>
-                <td>${formatDate(l.created_at)}</td>
-            </tr>
-        `).join('');
-
-        const leadsHtml = `
-            <h3>Detalhamento dos Leads (Filtro)</h3>
-            <table>
-                <thead>
-                    <tr>
-                        <th>Nome</th>
-                        <th>Status</th>
-                        <th>Origem</th>
-                        <th>Vendedor</th>
-                        <th>Consumo (kW)</th>
-                        <th>Motivo Perda</th>
-                        <th>Criação</th>
-                    </tr>
-                </thead>
-                <tbody>${leadsRows}</tbody>
-            </table>
-        `;
-
-        // --- Estrutura HTML Final ---
+        const leadsTableRows = leads && leads.length > 0
+            ? leads.map(lead => `
+                <tr>
+                    <td>${lead.id}</td>
+                    <td>${lead.name}</td>
+                    <td>${lead.status}</td>
+                    <td>${lead.owner_name || 'N/A'}</td>
+                    <td>${lead.origin || 'N/A'}</td>
+                    <td>${formatKw(lead.avg_consumption)}</td>
+                    <td>${formatDate(lead.created_at)}</td>
+                </tr>
+            `).join('')
+            : '<tr><td colspan="7">Nenhum lead encontrado com os filtros aplicados.</td></tr>';
+        
+        // ==========================================================
+        // TEMPLATE HTML FINAL
+        // ==========================================================
         return `
             <!DOCTYPE html>
-            <html>
+            <html lang="pt-BR">
             <head>
                 <meta charset="UTF-8">
-                <title>Relatório de Performance Completo</title>
+                <title>Relatório de Performance - EconomizaSul</title>
                 <style>
-                    body { font-family: Arial, sans-serif; font-size: 10px; margin: 0; padding: 0; color: #333; }
-                    .header { background: #1A7F3C; color: white; padding: 20px; text-align: center; }
-                    .report-container { padding: 30px; }
-                    h1 { font-size: 18px; margin-bottom: 5px; }
-                    h3 { font-size: 14px; color: #1A7F3C; border-bottom: 1px solid #eee; padding-bottom: 5px; margin-top: 20px; }
-                    .filter-info { margin-bottom: 20px; font-size: 11px; color: #555; background: #f9f9f9; padding: 10px; border-radius: 5px; }
-                    table { width: 100%; border-collapse: collapse; margin-bottom: 25px; page-break-inside: auto; }
-                    th, td { border: 1px solid #ddd; padding: 6px; text-align: left; }
-                    th { background-color: #f2f2f2; font-weight: bold; }
-                    .kpis { display: flex; flex-wrap: wrap; margin-bottom: 30px; }
-                    .kpis > div { width: 30%; margin: 10px 1.5%; padding: 10px; background: #f5f5f5; border-left: 3px solid #1A7F3C; }
-                    .kpis span { display: block; font-size: 9px; color: #777; }
-                    .kpis p { font-size: 14px; font-weight: bold; margin: 0; }
-                    .footer { text-align: right; margin-top: 50px; font-size: 9px; color: #777; }
+                    body { font-family: 'Arial', sans-serif; margin: 0; padding: 0; background-color: #f7f9fb; font-size: 10pt; }
+                    .header { background: #1A7F3C; color: white; padding: 25px 40px; text-align: center; border-bottom: 5px solid #0F5E2B; }
+                    .header h1 { margin: 0; font-size: 20pt; }
+                    .report-container { padding: 30px 40px; }
+                    h2 { color: #1A7F3C; border-bottom: 2px solid #eee; padding-bottom: 5px; margin-top: 25px; font-size: 16pt; }
+                    h3 { color: #555; margin-top: 20px; font-size: 13pt; }
+                    .filter-info { background-color: #f0f8ff; border: 1px solid #cceeff; padding: 10px; margin-bottom: 25px; font-size: 10pt; border-radius: 5px; }
+                    .filter-info p { margin: 3px 0; }
+                    table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+                    th, td { border: 1px solid #ddd; padding: 10px 12px; text-align: left; }
+                    th { background-color: #e8e8e8; color: #333; font-weight: bold; font-size: 9pt; }
+                    .value { text-align: right; font-weight: bold; }
+                    .summary-box { background-color: #fff; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 20px; }
+                    .section-break { page-break-before: always; }
                 </style>
             </head>
             <body>
                 <div class="header">
-                    <h1>Relatório de Performance | ${formatDate(filters.startDate)} a ${formatDate(filters.endDate)}</h1>
+                    <h1>Relatório de Performance & Métricas</h1>
+                    <p style="font-size: 10pt; margin-top: 5px;">Sistema CRM - EconomizaSul</p>
                 </div>
                 <div class="report-container">
-                    <p class="filter-info">**Filtros Aplicados:** Vendedor: ${filters.ownerId || 'Todos'}, Origem: ${filters.source || 'Todas'}.</p>
                     
-                    ${summaryHtml}
-                    ${productivityHtml}
-                    ${lostReasonsHtml}
+                    <div class="filter-info">
+                        <h3>Informações do Relatório</h3>
+                        <p><strong>Gerado por:</strong> ${generatorName}</p>
+                        <p><strong>Período:</strong> ${filters.startDate} a ${filters.endDate}</p>
+                        <p><strong>Vendedor:</strong> ${filters.ownerId === 'all' ? 'Todos' : filters.ownerId}</p>
+                        <p><strong>Origem:</strong> ${filters.source === 'all' ? 'Todas' : filters.source}</p>
+                    </div>
+
+                    <h2>Métricas de Produtividade (KPIs)</h2>
+                    <div class="summary-box">
+                        <table>
+                            ${productivityRows}
+                        </table>
+                    </div>
+
+                    <div style="display: flex; justify-content: space-between;">
+                        <div style="width: 48%;" class="summary-box">
+                            <h2>Funil de Vendas</h2>
+                            <table>
+                                <thead>
+                                    <tr class="header-row"><th>Etapa</th><th>Qtd. Leads</th><th>% Total</th></tr>
+                                </thead>
+                                ${funnelRows}
+                            </table>
+                        </div>
+                        <div style="width: 48%;" class="summary-box">
+                            <h2>Motivos de Perda (Churn)</h2>
+                            <table>
+                                <thead>
+                                    <tr class="header-row"><th>Motivo</th><th>Qtd. Perda</th><th>% da Perda</th></tr>
+                                </thead>
+                                ${lostReasonsRows}
+                            </table>
+                        </div>
+                    </div>
                     
-                    <div style="page-break-before: always;"></div>
-                    ${leadsHtml}
-                    
-                    <p class="footer">Gerado por: ${generatorName} em: ${new Date().toLocaleString('pt-BR')}</p>
+                    <div class="section-break"></div>
+
+                    <h2>Leads Detalhados (${leads ? leads.length.toLocaleString('pt-BR') : 0})</h2>
+                    <table>
+                        ${leadsTableHeaders}
+                        <tbody>
+                            ${leadsTableRows}
+                        </tbody>
+                    </table>
+
+                    <p style="text-align: right; margin-top: 50px; font-size: 9pt;">
+                        Relatório gerado em ${new Date().toLocaleString('pt-BR')}.
+                    </p>
                 </div>
             </body>
             </html>
         `;
+    }
+
+    /**
+     * Função principal chamada pelo ReportController para gerar o PDF completo.
+     * @param {Object} data - Objeto contendo todos os dados necessários.
+     * @returns {Promise<Buffer>} Buffer do PDF.
+     */
+    async generateFullReportPdf(data) {
+        const htmlContent = this.generateHtmlReport(data);
+        return this.generatePdf(htmlContent);
     }
 }
 
