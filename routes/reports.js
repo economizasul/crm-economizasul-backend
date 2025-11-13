@@ -1,25 +1,26 @@
-// routes/reports.js (Versão Final Otimizada)
+// routes/reports.js
 
 const express = require('express');
 const router = express.Router();
 const ReportController = require('../controllers/ReportController');
-const { protect } = require('../middleware/authMiddleware');
+// 🚨 Assumindo que você tem um middleware de autenticação
+const { protect } = require('../middleware/authMiddleware'); 
 
+// Aplica o middleware de proteção a todas as rotas de relatório
 router.use(protect);
 
-// 1. Rota de Dados do Dashboard
-// Permite GET (filtros na query) e POST (filtros no body)
+// 1. Rota de Vendedores (usada pelo FilterBar.jsx)
+router.get('/sellers', ReportController.getVendors);
+
+// 2. Rota de Dados do Dashboard (GET/POST para flexibilidade de filtros)
 router.route('/data')
     .get(ReportController.getReportData)
     .post(ReportController.getReportData);
 
-// 2. Notas Analíticas (GET está correto)
-router.get('/analytic/:leadId', ReportController.getAnalyticNotes);
+// 3. Rota de Exportação CSV
+router.post('/export/csv', ReportController.exportCsv);
 
-// 3. Exportação (Usando GET, pois é uma busca/download)
-// Mudar de .post para .get para seguir a semântica de download/busca, 
-// a menos que os filtros sejam grandes demais para a URL.
-router.get('/export/csv', ReportController.exportCsv);
-router.get('/export/pdf', ReportController.exportPdf);
+// 4. Rota de Exportação PDF
+router.post('/export/pdf', ReportController.exportPdf);
 
 module.exports = router;
