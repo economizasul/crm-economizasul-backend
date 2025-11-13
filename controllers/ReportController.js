@@ -1,20 +1,20 @@
 // controllers/ReportController.js
+
+// 🚨 CORREÇÃO: Removendo o constructor e 'bind' e usando static methods.
+// Isso resolve o "argument handler must be a function" no router.
+
 const { pool } = require('../config/db');
 const ReportDataService = require('../services/ReportDataService');
-// Assumindo que você tem serviços dedicados (GsvGeneratorService e PdfGeneratorService)
 const CsvGeneratorService = require('../services/CsvGeneratorService'); 
 const PdfGeneratorService = require('../services/PdfGeneratorService'); 
 
 class ReportController {
-  constructor() {
-    this.getVendors = this.getVendors.bind(this);
-    this.getReportData = this.getReportData.bind(this);
-    this.exportCsv = this.exportCsv.bind(this);
-    this.exportPdf = this.exportPdf.bind(this);
-  }
 
-  // Lista vendedores reais (Método Inalterado)
-  async getVendors(req, res) {
+  /**
+   * Lista vendedores reais (tabela users). Admin vê todos, user vê só ele.
+   * @route GET /reports/sellers
+   */
+  static async getVendors(req, res) { // 🟢 AGORA É ESTÁTICO
     try {
       const isAdmin = req.user?.role === 'Admin';
       const query = isAdmin
@@ -31,15 +31,12 @@ class ReportController {
 
   /**
    * Rota principal para buscar dados agregados do Dashboard de Relatórios.
-   * Suporta POST (body) e GET (query) para filtros.
    * @route POST/GET /reports/data
    */
-  async getReportData(req, res) {
+  static async getReportData(req, res) { // 🟢 AGORA É ESTÁTICO
     try {
-      // Pega filtros do corpo (POST) ou da query (GET)
       let filters = req.body.filters || req.query.filters || {};
       
-      // Converte o JSON string da query string para objeto se vier via GET
       if (typeof filters === 'string') {
         try {
           filters = JSON.parse(filters);
@@ -49,11 +46,9 @@ class ReportController {
         }
       }
 
-      // Identifica o usuário e seu papel para aplicar filtros de segurança
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
       
-      // Chama o serviço de dados para calcular todas as métricas de forma eficiente
       const data = await ReportDataService.getAllDashboardData(filters, userId, isAdmin);
       
       return res.status(200).json({ success: true, data });
@@ -64,25 +59,29 @@ class ReportController {
     }
   }
   
+  // Rota de Notas Analíticas (Mantida, se for usada em outra rota)
+  static async getAnalyticNotes(req, res) { 
+      // Esta função deve ser implementada se você a usa no seu roteador
+      return res.status(501).json({ success: false, message: 'Endpoint getAnalyticNotes não implementado.' });
+  }
+
+
   // Rota de Exportação CSV
-  async exportCsv(req, res) {
+  static async exportCsv(req, res) { // 🟢 AGORA É ESTÁTICO
     try {
-      // Pega filtros do corpo (POST) ou da query (GET)
       let filters = req.body.filters || req.query.filters || {};
       if (typeof filters === 'string') filters = JSON.parse(filters);
 
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
-      // Busca os leads brutos
       const leads = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       
-      // Gera o CSV
       const csvString = await CsvGeneratorService.exportLeads(leads);
 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename=relatorio_leads_${new Date().toISOString().slice(0, 10)}.csv`);
-      res.status(200).send(Buffer.from('\ufeff' + csvString, 'utf8')); // Adiciona BOM para UTF-8 no Excel
+      res.status(200).send(Buffer.from('\ufeff' + csvString, 'utf8'));
       
     } catch (error) {
       console.error('Erro ao exportar CSV:', error);
@@ -91,20 +90,17 @@ class ReportController {
   }
 
   // Rota de Exportação PDF
-  async exportPdf(req, res) {
+  static async exportPdf(req, res) { // 🟢 AGORA É ESTÁTICO
     try {
-      // Pega filtros do corpo (POST) ou da query (GET)
       let filters = req.body.filters || req.query.filters || {};
       if (typeof filters === 'string') filters = JSON.parse(filters);
 
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
-      // Busca todos os dados necessários (métricas e leads)
       const metrics = await ReportDataService.getAllDashboardData(filters, userId, isAdmin);
       const leadsForPdf = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       
-      // Delega a geração do PDF para o serviço
       const pdfBuffer = await PdfGeneratorService.generateFullReportPdf({
           metrics, 
           leads: leadsForPdf, 
@@ -123,4 +119,4 @@ class ReportController {
   }
 }
 
-module.exports = new ReportController();
+module.exports = ReportController;

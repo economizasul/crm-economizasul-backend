@@ -2,25 +2,28 @@
 
 const express = require('express');
 const router = express.Router();
-const ReportController = require('../controllers/ReportController');
-// 🚨 Assumindo que você tem um middleware de autenticação
-const { protect } = require('../middleware/authMiddleware'); 
+// O ReportController agora importa a classe com métodos estáticos.
+const ReportController = require('../controllers/ReportController'); 
+const { protect } = require('../middleware/authMiddleware');
 
-// Aplica o middleware de proteção a todas as rotas de relatório
 router.use(protect);
 
-// 1. Rota de Vendedores (usada pelo FilterBar.jsx)
+// 1. Rota de Vendedores
 router.get('/sellers', ReportController.getVendors);
 
-// 2. Rota de Dados do Dashboard (GET/POST para flexibilidade de filtros)
+// 2. Rota de Dados do Dashboard
 router.route('/data')
     .get(ReportController.getReportData)
     .post(ReportController.getReportData);
 
-// 3. Rota de Exportação CSV
+// 3. Rota de Exportação CSV (Usamos POST para enviar filtros no corpo)
 router.post('/export/csv', ReportController.exportCsv);
 
-// 4. Rota de Exportação PDF
+// 4. Rota de Exportação PDF (Usamos POST para enviar filtros no corpo)
 router.post('/export/pdf', ReportController.exportPdf);
+
+// 5. Rota de Notas Analíticas (se for usada)
+router.get('/analytic/:leadId', ReportController.getAnalyticNotes);
+
 
 module.exports = router;
