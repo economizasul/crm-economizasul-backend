@@ -1,4 +1,4 @@
-// services/ReportDataService.js (COMPLETO E CORRIGIDO)
+// services/ReportDataService.js
 const { pool } = require('../config/db');
 const { format } = require('date-fns');
 
@@ -29,155 +29,190 @@ const buildFilter = (filters, userId, isAdmin) => {
         whereClause += ` AND owner_id = $${nextIndex++}`;
         values.push(userId);
     } else if (ownerId && ownerId !== 'all') {
-        // Admin: se o filtro 'Vendedor' for aplicado (ownerId diferente de 'all')
+        // Admin: se o filtro 'ownerId' for aplicado
         whereClause += ` AND owner_id = $${nextIndex++}`;
-        // O ownerId do filtro é uma string que deve ser convertida para número se for um ID
-        values.push(ownerId); 
+        values.push(parseInt(ownerId));
     }
-    
+
     // 2. Filtro por Origem (Source)
     if (source && source !== 'all') {
         whereClause += ` AND origin = $${nextIndex++}`;
         values.push(source);
     }
-
-    return { whereClause, values, nextIndex };
+    
+    // Retorna a cláusula WHERE e os valores
+    return { whereClause, values };
 };
 
-class ReportDataService {
 
-    // ==========================================================
-    // 📊 MÉTICAS DE VISÃO GERAL (GLOBAL - IGNORA FILTRO DE DATA)
-    // ==========================================================
+// ==========================================================
+// 📊 REPORT DATA SERVICE
+// ==========================================================
+
+class ReportDataService {
     
     /**
-     * Busca as métricas de visão geral (Total Leads, KW Vendido, Conversão, Fechamento)
-     * desconsiderando o filtro de data, mas respeitando o owner_id para 'User'.
+     * NOVO MÉTODO: Busca o total de leads ativos globalmente (ignora todos os filtros).
+     * Leads Ativos = leads que NÃO estão em Fechado Ganho ou Fechado Perdido.
      */
-    static async getGlobalMetrics(userId, isAdmin) {
-        let ownerFilterClause = ``;
-        const values = [];
-
-        // Aplica filtro de usuário se não for Admin
-        if (!isAdmin) {
-            ownerFilterClause += ` WHERE owner_id = $1`;
-            values.push(userId);
-        }
-        
-        // Query principal para métricas globais
+    static async getGlobalActiveLeadsCount() {
         const query = `
-            SELECT
-                COUNT(id) AS total_leads,
-                SUM(CASE WHEN status = 'Ganho' THEN avg_consumption ELSE 0 END) AS total_won_kw,
-                COUNT(CASE WHEN status = 'Ganho' THEN 1 END) AS total_won_count,
-                COUNT(CASE WHEN status = 'Perdido' THEN 1 END) AS total_lost_count,
-                -- Tempo Médio de Fechamento (em dias)
-                AVG(CASE WHEN status = 'Ganho' THEN EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400.0 END) AS avg_closing_time_days
+            SELECT COUNT(*) AS total_active
             FROM leads
-            ${ownerFilterClause};
+            WHERE status NOT IN ('Fechado Ganho', 'Fechado Perdido');
         `;
-
-        const result = await pool.query(query, values);
-        const data = result.rows[0];
-
-        const totalWon = parseInt(data.total_won_count || 0);
-        const totalLost = parseInt(data.total_lost_count || 0);
-        const totalClosed = totalWon + totalLost;
-        
-        return {
-            totalLeads: parseInt(data.total_leads || 0),
-            totalWonValueKW: parseFloat(data.total_won_kw || 0),
-            // Taxa de Conversão: Ganho / (Ganho + Perdido)
-            conversionRate: totalClosed > 0 ? (totalWon / totalClosed) : 0, 
-            avgClosingTimeDays: parseFloat(data.avg_closing_time_days || 0),
-        };
+        try {
+            const result = await pool.query(query);
+            // Retorna o total como número inteiro
+            return parseInt(result.rows[0]?.total_active) || 0;
+        } catch (error) {
+            console.error('Erro ao buscar total de leads ativos global:', error);
+            throw error;
+        }
     }
 
-    // ==========================================================
-    // 📈 MÉTICAS DE PRODUTIVIDADE (COM FILTROS)
-    // ==========================================================
-
     /**
-     * Busca as métricas de produtividade (com filtros de data, vendedor e origem)
+     * Busca os principais dados do dashboard (métricas, funil, etc.) baseados nos filtros.
+     * @param {Object} filters - Os filtros de data, vendedor e origem.
+     * @param {number|null} userId - ID do usuário logado.
+     * @param {boolean} isAdmin - Se o usuário é Admin.
      */
-    static async getProductivityMetrics(filters, userId, isAdmin) {
-        // Usa a função auxiliar buildFilter para aplicar todos os filtros (data, owner, source)
+    static async getAllDashboardData(filters, userId, isAdmin) {
+        // Usa a função auxiliar para construir a cláusula WHERE COM FILTROS
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+        
+        // Métrica: Leads Ativos (Filtrado) - Leads não fechados no período dos filtros
+        const leadsActiveQuery = `
+            SELECT COUNT(*) AS leads_active
+            FROM leads
+            ${whereClause} 
+            AND status NOT IN ('Fechado Ganho', 'Fechado Perdido');
+        `;
 
-        // Esta é a query de produtividade que respeita os filtros
-        const query = `
-            SELECT
-                COUNT(id) AS total_leads,
-                -- Leads Ativos: diferente de Ganho e Perdido
-                COUNT(CASE WHEN status NOT IN ('Ganho', 'Perdido') THEN 1 END) AS leads_active,
-                -- Vendas Concluídas (Qtd)
-                COUNT(CASE WHEN status = 'Ganho' THEN 1 END) AS total_won_count,
-                -- Leads Perdidos
-                COUNT(CASE WHEN status = 'Perdido' THEN 1 END) AS total_lost_count,
-                -- Valor Total (kW): somente Ganho
-                SUM(CASE WHEN status = 'Ganho' THEN avg_consumption ELSE 0 END) AS total_won_kw,
-                SUM(CASE WHEN status = 'Ganho' THEN estimated_savings ELSE 0 END) AS total_won_savings,
-                -- Tempo Médio de Fechamento: somente Ganho
-                AVG(CASE WHEN status = 'Ganho' THEN EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400.0 END) AS avg_closing_time_days
+        // Métrica: Total de Leads (Filtrado)
+        const totalLeadsQuery = `
+            SELECT COUNT(*) AS total_leads
             FROM leads
             ${whereClause};
         `;
+
+        // Métrica: Vendas Ganhas (Quantidade e kW - Filtrado)
+        const wonLeadsQuery = `
+            SELECT 
+                COUNT(*) AS total_won_count,
+                COALESCE(SUM(estimated_savings), 0) AS total_won_value_kw
+            FROM leads
+            ${whereClause} 
+            AND status = 'Fechado Ganho';
+        `;
+
+        // Métrica: Leads Perdidos (Quantidade - Filtrado)
+        const lostLeadsCountQuery = `
+            SELECT 
+                COUNT(*) AS total_lost_count
+            FROM leads
+            ${whereClause} 
+            AND status = 'Fechado Perdido';
+        `;
+
+        // Métrica: Tempo Médio de Fechamento (Dias - Filtrado)
+        const avgClosingTimeQuery = `
+            SELECT 
+                COALESCE(AVG(EXTRACT(EPOCH FROM date_won - created_at) / 86400), 0) AS avg_closing_time_days
+            FROM leads
+            ${whereClause} 
+            AND status = 'Fechado Ganho' 
+            AND date_won IS NOT NULL;
+        `;
         
-        const result = await pool.query(query, values);
-        const data = result.rows[0];
-
-        const totalWon = parseInt(data.total_won_count || 0);
-        const totalLost = parseInt(data.total_lost_count || 0);
-        const totalClosed = totalWon + totalLost;
-
-        const productivity = {
-            totalLeads: parseInt(data.total_leads || 0),
-            leadsActive: parseInt(data.leads_active || 0),
-            totalWonCount: totalWon,
-            totalWonValueKW: parseFloat(data.total_won_kw || 0),
-            totalWonValueSavings: parseFloat(data.total_won_savings || 0),
-            
-            // Taxas
-            conversionRate: totalClosed > 0 ? (totalWon / totalClosed) : 0,
-            lossRate: totalClosed > 0 ? (totalLost / totalClosed) : 0,
-
-            // Tempo
-            avgClosingTimeDays: parseFloat(data.avg_closing_time_days || 0),
-        };
+        // Funil: Agrupamento por status (Filtrado)
+        const funnelQuery = `
+            SELECT status AS stageName, COUNT(*) AS count
+            FROM leads
+            ${whereClause}
+            GROUP BY status
+            ORDER BY count DESC;
+        `;
         
-        return productivity;
-    }
+        // Motivos de Perda (Filtrado)
+        const lostReasonsQuery = `
+            SELECT 
+                reason_for_loss AS reason, 
+                COUNT(*) AS count
+            FROM leads
+            ${whereClause} 
+            AND status = 'Fechado Perdido'
+            AND reason_for_loss IS NOT NULL
+            GROUP BY reason_for_loss
+            ORDER BY count DESC;
+        `;
 
-    // ==========================================================
-    // 🚀 FUNÇÃO PRINCIPAL
-    // ==========================================================
-    
-    /**
-     * Função principal para o endpoint de dados do dashboard.
-     */
-    static async getAllDashboardData(filters, userId, isAdmin) {
+        // 🚨 Submetendo todas as consultas em paralelo para otimizar a velocidade
         try {
-            // 1. Métricas de Visão Geral (Global - Ignora filtro de data)
-            const globalSummary = await this.getGlobalMetrics(userId, isAdmin);
-
-            // 2. Métricas de Produtividade (Respeita todos os filtros)
-            const productivity = await this.getProductivityMetrics(filters, userId, isAdmin);
+            const [
+                leadsActiveResult, 
+                totalLeadsResult, 
+                wonLeadsResult, 
+                lostLeadsCountResult,
+                avgClosingTimeResult,
+                funnelResult,
+                lostReasonsResult
+            ] = await Promise.all([
+                pool.query(leadsActiveQuery, values),
+                pool.query(totalLeadsQuery, values),
+                pool.query(wonLeadsQuery, values),
+                pool.query(lostLeadsCountQuery, values),
+                pool.query(avgClosingTimeQuery, values),
+                pool.query(funnelQuery, values),
+                pool.query(lostReasonsQuery, values)
+            ]);
             
-            // 3. Busca Dados para Funil, Motivos de Perda e Atividade Diária
-            // 🚨 ATENÇÃO: Os métodos abaixo (getFunnelData, getLostReasonsData, getDailyActivity)
-            // DEVEM ser adaptados para usar o 'buildFilter' internamente.
-            const funnel = await this.getFunnelData(filters, userId, isAdmin); 
-            const lostReasons = await this.getLostReasonsData(filters, userId, isAdmin);
-            const dailyActivity = await this.getDailyActivity(filters, userId, isAdmin); 
+            // Conversão de resultados
+            const leadsActive = parseInt(leadsActiveResult.rows[0]?.leads_active) || 0;
+            const totalLeads = parseInt(totalLeadsResult.rows[0]?.total_leads) || 0;
+            const totalWonCount = parseInt(wonLeadsResult.rows[0]?.total_won_count) || 0;
+            const totalWonValueKW = parseFloat(wonLeadsResult.rows[0]?.total_won_value_kw) || 0;
+            const totalLostCount = parseInt(lostLeadsCountResult.rows[0]?.total_lost_count) || 0;
+            const avgClosingTimeDays = parseFloat(avgClosingTimeResult.rows[0]?.avg_closing_time_days) || 0;
             
-            // Retorno estruturado (Novo campo: globalSummary)
+            // Cálculo de taxas
+            const totalClosed = totalWonCount + totalLostCount;
+            const conversionRate = totalClosed > 0 ? totalWonCount / totalClosed : 0;
+            const lossRate = totalClosed > 0 ? totalLostCount / totalClosed : 0;
+            
+            // Funil
+            const funnel = funnelResult.rows.map(row => ({
+                stageName: row.stageName,
+                count: parseInt(row.count)
+            }));
+            
+            // Motivos de Perda
+            const lostReasonsData = {
+                reasons: lostReasonsResult.rows.map(row => ({
+                    reason: row.reason,
+                    count: parseInt(row.count)
+                })),
+                totalLost: totalLostCount // Reutiliza a contagem geral
+            };
+            
+            // Monta o objeto de produtividade (filtrado)
+            const productivity = {
+                leadsActive,
+                totalLeads,
+                totalWonCount,
+                totalWonValueKW,
+                totalLostCount,
+                conversionRate,
+                lossRate,
+                avgClosingTimeDays,
+            };
+            
+            // Estrutura de retorno final
             return {
-                globalSummary: globalSummary, // Usado no topo da ReportsPage
-                productivity: productivity,   // Usado nos KPIs e na ProductivityTable
-                funnel: funnel,
-                lostReasons: lostReasons,
-                dailyActivity: dailyActivity,
-                forecasting: { forecastedKwWeighted: 0 } // Mantido
+                productivity,
+                funnel,
+                lostReasons: lostReasonsData,
+                // dailyActivity: [], // Adicione aqui se houver uma consulta de atividade diária
             };
             
         } catch (error) {
@@ -186,25 +221,9 @@ class ReportDataService {
         }
     }
     
-    // ==========================================================
-    // 🔧 FUNÇÕES AUXILIARES (Placeholders para adaptação)
-    // ==========================================================
-    
-    static async getFunnelData(filters, userId, isAdmin) {
-        // Lógica de consulta ao funil aqui, usando 'buildFilter'
-        return []; 
-    }
-    
-    static async getLostReasonsData(filters, userId, isAdmin) {
-        // Lógica de consulta dos motivos de perda aqui, usando 'buildFilter'
-        return { reasons: [], totalLost: 0 }; 
-    }
-    
-    static async getDailyActivity(filters, userId, isAdmin) {
-        // Lógica de consulta de atividade diária aqui, usando 'buildFilter'
-        return []; 
-    }
-
+    /**
+     * Método auxiliar para buscar leads brutos para a exportação CSV/PDF.
+     */
     static async getLeadsForExport(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
         
