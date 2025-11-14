@@ -1,13 +1,15 @@
-// controllers/ReportController.js
+// controllers/ReportController.js (CORREÇÃO FINAL PARA DEPLOY)
 const { pool } = require('../config/db');
 const ReportDataService = require('../services/ReportDataService');
-// 🚨 Nota: Assumindo que os nomes de seus serviços são CsvGeneratorService e PdfGeneratorService
 const CsvGeneratorService = require('../services/CsvGeneratorService'); 
 const PdfGeneratorService = require('../services/PdfGeneratorService'); 
-const LeadAnalyticNote = require('../models/LeadAnalyticNote'); // Se este modelo existir
+
+// 🚨 CORREÇÃO DE DEPLOY: A linha abaixo estava causando o erro "Cannot find module"
+// const LeadAnalyticNote = require('../models/LeadAnalyticNote'); // LINHA REMOVIDA OU COMENTADA
 
 class ReportController {
   constructor() {
+    // Certifique-se de que o bind está usando a sintaxe correta para classes
     this.getVendors = ReportController.getVendors.bind(this);
     this.getReportData = ReportController.getReportData.bind(this);
     this.getAnalyticNotes = ReportController.getAnalyticNotes.bind(this);
@@ -43,13 +45,12 @@ class ReportController {
       // 1. Extração de Filtros (ROBUSTA)
       let filters = req.body.filters || req.query.filters || {}; 
       
-      // 🚨 CORREÇÃO CRÍTICA: Se a requisição for GET, o objeto 'filters' é recebido como STRING e precisa de PARSING
+      // 🚨 CORREÇÃO CRÍTICA: Trata filtros que vêm como string na URL (GET)
       if (typeof filters === 'string') {
           try {
               filters = JSON.parse(filters);
           } catch (e) {
               console.error('Erro ao fazer JSON.parse nos filtros:', e);
-              // Caso o JSON esteja inválido, usamos um objeto vazio como fallback
               filters = {}; 
           }
       }
@@ -60,15 +61,12 @@ class ReportController {
       // 2. Chama o serviço principal
       const data = await ReportDataService.getAllDashboardData(filters, userId, isAdmin); 
       
-      // 3. Resposta de sucesso
       return res.status(200).json({ success: true, data });
 
     } catch (error) {
-      // 4. Tratamento de Erro CRÍTICO (retorna o status 500)
       console.error('ERRO INTERNO: ReportController.getReportData falhou:', error.message);
       return res.status(500).json({ 
         success: false, 
-        // Retorna uma mensagem de erro que ajuda na depuração
         message: 'Falha ao carregar dados do relatório. Verifique o log do servidor para o erro SQL detalhado.' 
       });
     }
@@ -76,15 +74,16 @@ class ReportController {
   
   /**
    * Rota para buscar notas analíticas de um Lead específico.
-   * (Assumindo que você tem um modelo/serviço para isso)
+   * (Esta função agora retorna um array vazio para não depender do módulo LeadAnalyticNote)
    * @route GET /reports/analytic/:leadId
    */
   static async getAnalyticNotes(req, res) {
     try {
         const { leadId } = req.params;
-        // 🚨 Placeholder: Assumindo que o LeadAnalyticNote existe.
-        // const notes = await LeadAnalyticNote.findByLeadId(leadId); 
-        return res.status(200).json({ success: true, data: [] }); // Placeholder
+        // 🚨 Placeholder temporário para funcionar sem o modelo LeadAnalyticNote
+        // Se este módulo for implementado, a lógica de busca deve ser adicionada aqui.
+        console.warn(`Função getAnalyticNotes chamada para lead ${leadId}. Retornando placeholder.`);
+        return res.status(200).json({ success: true, data: [] }); 
     } catch (error) {
         console.error('Erro ao buscar notas analíticas:', error);
         return res.status(500).json({ success: false, message: 'Erro ao buscar notas analíticas.' });
@@ -93,22 +92,26 @@ class ReportController {
 
   /**
    * Rota de Exportação CSV
-   * @route POST /reports/export/csv
+   * @route POST/GET /reports/export/csv
    */
   static async exportCsv(req, res) {
     try {
       const filters = req.body.filters || req.query.filters || {};
+      
+      if (typeof filters === 'string') {
+          filters = JSON.parse(filters);
+      }
+      
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
       const leadsForExport = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       
-      // Delega a geração do CSV para o serviço
       const csvString = await CsvGeneratorService.exportLeads(leadsForExport);
 
       res.setHeader('Content-Type', 'text/csv; charset=utf-8');
       res.setHeader('Content-Disposition', `attachment; filename=relatorio_leads_${new Date().toISOString().slice(0, 10)}.csv`);
-      return res.status(200).send('\ufeff' + csvString); // Adiciona BOM para garantir UTF-8 no Excel
+      return res.status(200).send('\ufeff' + csvString); 
 
     } catch (error) {
       console.error('Erro ao exportar CSV:', error);
@@ -118,19 +121,22 @@ class ReportController {
 
   /**
    * Rota de Exportação PDF
-   * @route POST /reports/export/pdf
+   * @route POST/GET /reports/export/pdf
    */
   static async exportPdf(req, res) {
     try {
       const filters = req.body.filters || req.query.filters || {};
+
+      if (typeof filters === 'string') {
+          filters = JSON.parse(filters);
+      }
+      
       const userId = req.user?.id || null;
       const isAdmin = req.user?.role === 'Admin' || false;
 
-      // Busca todos os dados necessários (métricas e leads)
       const metrics = await ReportDataService.getAllDashboardData(filters, userId, isAdmin);
       const leadsForPdf = await ReportDataService.getLeadsForExport(filters, userId, isAdmin);
       
-      // Delega a geração do PDF para o serviço
       const pdfBuffer = await PdfGeneratorService.generateFullReportPdf({
           metrics, 
           leads: leadsForPdf, 
@@ -144,10 +150,15 @@ class ReportController {
       
     } catch (error) {
        console.error('Erro ao exportar PDF (ReportController):', error.message);
-       // Trata o erro 500 para evitar quebra total
+       
+       let message = 'Erro interno ao gerar PDF.';
+       if (error.message.includes('Timeout') || error.message.includes('launch')) {
+        message = 'Falha crítica ao iniciar o navegador (Chromium) para o PDF. Verifique as dependências do Render.';
+       }
+
        return res.status(500).json({ 
         success: false, 
-        message: 'Erro interno ao gerar PDF. Verifique os logs do Puppeteer/Chromium se o erro persistir.' 
+        message: message 
        });
     }
   }
