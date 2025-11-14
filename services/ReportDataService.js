@@ -6,28 +6,21 @@ const { format } = require('date-fns');
 // 🛠️ UTILS DE FILTRAGEM
 // ==========================================================
 
-/**
- * Constrói a cláusula WHERE e os valores para as queries SQL, respeitando os filtros.
- */
 const buildFilter = (filters, userId, isAdmin) => {
     const { startDate, endDate, ownerId, source } = filters;
     
-    // 🚨 CORREÇÃO DE ROBUSTEZ: Define datas padrões (hoje) se faltarem ou forem nulas.
     const defaultDateString = format(new Date(), 'yyyy-MM-dd');
 
-    // Extende as datas para cobrir o dia inteiro.
     const start = startDate && startDate.trim() ? startDate : defaultDateString;
     const end = endDate && endDate.trim() ? endDate : defaultDateString;
 
     const formattedStartDate = `${start} 00:00:00`;
     const formattedEndDate = `${end} 23:59:59`;
     
-    // Filtro de data obrigatório (usando a data de criação do lead)
     let whereClause = `WHERE created_at BETWEEN $1 AND $2`;
     const values = [formattedStartDate, formattedEndDate];
     let nextIndex = 3;
 
-    // 1. Filtro por Vendedor (Owner)
     if (!isAdmin) {
         whereClause += ` AND owner_id = $${nextIndex++}`;
         values.push(userId);
@@ -36,7 +29,6 @@ const buildFilter = (filters, userId, isAdmin) => {
         values.push(ownerId);
     }
     
-    // 2. Filtro por Origem (Source)
     if (source && source !== 'all') {
         whereClause += ` AND origin = $${nextIndex++}`;
         values.push(source);
@@ -52,9 +44,6 @@ const buildFilter = (filters, userId, isAdmin) => {
 
 class ReportDataService {
 
-    /**
-     * Busca métricas de Produtividade, Conversão e Resumo Geral.
-     */
     static async getSummaryAndProductivity(whereClause, values) {
         const query = `
             SELECT
@@ -64,8 +53,8 @@ class ReportDataService {
                 -- Vendas (Ganhas)
                 COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
                 
-                -- 🏆 CORREÇÃO CRÍTICA: O nome da coluna foi alterado de 'estimated_savings' para 'avg_consumption'
-                COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN avg_consumption ELSE 0 END), 0) AS total_won_value_kw,
+                -- 🟢 CORREÇÃO CRÍTICA: CAST de avg_consumption para NUMERIC para evitar erro de tipo na função SUM()
+                COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN avg_consumption::numeric ELSE 0 END), 0) AS total_won_value_kw,
                 
                 -- Perdas (Perdidas)
                 COALESCE(SUM(CASE WHEN status = 'Fechado Perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
@@ -96,7 +85,6 @@ class ReportDataService {
             return {
                 totalLeads: parseInt(data.total_leads || 0),
                 totalWonCount: parseInt(data.total_won_count || 0),
-                // Garante que o valor é float
                 totalWonValueKW: parseFloat(data.total_won_value_kw || 0), 
                 totalLostCount: parseInt(data.total_lost_count || 0),
                 conversionRate: parseFloat(data.conversion_rate_percent || 0) / 100, 
@@ -110,74 +98,45 @@ class ReportDataService {
         }
     }
     
-    /**
-     * Busca a distribuição de leads por estágio do Funil.
-     */
+    // ... (restante das funções getFunnelData, getLostReasonsData, getDailyActivity e getLeadsForExport são mantidas inalteradas)
+    
     static async getFunnelData(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-        
         const query = `
-            SELECT
-                status AS stage_name,
-                COUNT(*) AS count
-            FROM leads
-            ${whereClause}
+            SELECT status AS stage_name, COUNT(*) AS count
+            FROM leads ${whereClause}
             GROUP BY status
             ORDER BY count DESC;
         `;
-
         try {
             const result = await pool.query(query, values);
-            return result.rows.map(row => ({
-                stageName: row.stage_name,
-                count: parseInt(row.count || 0)
-            }));
+            return result.rows.map(row => ({ stageName: row.stage_name, count: parseInt(row.count || 0) }));
         } catch (error) {
             console.error('CRITICAL SQL ERROR in getFunnelData:', error.message);
             throw error;
         }
     }
     
-    /**
-     * Busca a análise de motivos de perda (Lost Reasons).
-     */
     static async getLostReasonsData(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-        
-        // 1. Conta o total de leads perdidos no filtro (necessário para calcular a %)
         const totalLostQuery = `
             SELECT COALESCE(COUNT(*), 0) AS total_lost
-            FROM leads
-            ${whereClause}
-            AND status = 'Fechado Perdido';
+            FROM leads ${whereClause} AND status = 'Fechado Perdido';
         `;
-        
-        // 2. Agrupa os motivos de perda
         const reasonsQuery = `
-            SELECT
-                lost_reason AS reason,
-                COUNT(*) AS count
-            FROM leads
-            ${whereClause}
-            AND status = 'Fechado Perdido'
-            AND lost_reason IS NOT NULL 
-            GROUP BY lost_reason
-            ORDER BY count DESC;
+            SELECT lost_reason AS reason, COUNT(*) AS count
+            FROM leads ${whereClause}
+            AND status = 'Fechado Perdido' AND lost_reason IS NOT NULL 
+            GROUP BY lost_reason ORDER BY count DESC;
         `;
-        
         try {
             const [totalLostResult, reasonsResult] = await Promise.all([
                 pool.query(totalLostQuery, values),
                 pool.query(reasonsQuery, values)
             ]);
-            
             const totalLostCount = parseInt(totalLostResult.rows[0]?.total_lost || 0);
-            
             return {
-                reasons: reasonsResult.rows.map(row => ({
-                    reason: row.reason,
-                    count: parseInt(row.count || 0)
-                })),
+                reasons: reasonsResult.rows.map(row => ({ reason: row.reason, count: parseInt(row.count || 0) })),
                 totalLost: totalLostCount
             };
         } catch (error) {
@@ -186,51 +145,28 @@ class ReportDataService {
         }
     }
     
-    /**
-     * Busca a atividade de criação de leads por dia.
-     */
     static async getDailyActivity(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-
         const query = `
-            SELECT
-                created_at::date AS activity_date,
-                COUNT(*) AS leads_created
-            FROM leads
-            ${whereClause}
-            GROUP BY created_at::date
-            ORDER BY created_at::date ASC;
+            SELECT created_at::date AS activity_date, COUNT(*) AS leads_created
+            FROM leads ${whereClause}
+            GROUP BY created_at::date ORDER BY created_at::date ASC;
         `;
-        
         try {
             const result = await pool.query(query, values);
-            
-            return result.rows.map(row => ({
-                date: row.activity_date,
-                count: parseInt(row.leads_created || 0)
-            }));
+            return result.rows.map(row => ({ date: row.activity_date, count: parseInt(row.leads_created || 0) }));
         } catch (error) {
             console.error('CRITICAL SQL ERROR in getDailyActivity:', error.message);
             throw error;
         }
     }
 
-    // ==========================================================
-    // 🗂️ FUNÇÃO MASTER DE DADOS
-    // ==========================================================
-
-    /**
-     * Função principal que orquestra a busca de todos os dados do dashboard.
-     */
     static async getAllDashboardData(filters, userId, isAdmin) {
         try {
             const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
             const [
-                summaryAndProd, 
-                funnel,
-                lostReasons,
-                dailyActivity,
+                summaryAndProd, funnel, lostReasons, dailyActivity,
             ] = await Promise.all([
                 ReportDataService.getSummaryAndProductivity(whereClause, values),
                 ReportDataService.getFunnelData(filters, userId, isAdmin),
@@ -240,15 +176,11 @@ class ReportDataService {
             
             return {
                 globalSummary: summaryAndProd, 
-                productivity: {
-                    ...summaryAndProd 
-                },
+                productivity: { ...summaryAndProd },
                 funnel: funnel,
                 lostReasons: lostReasons,
                 dailyActivity: dailyActivity,
-                forecasting: {
-                    forecastedKwWeighted: 0 
-                }
+                forecasting: { forecastedKwWeighted: 0 }
             };
             
         } catch (error) {
@@ -257,23 +189,13 @@ class ReportDataService {
         }
     }
     
-    // ==========================================================
-    // 📤 FUNÇÃO DE EXPORTAÇÃO
-    // ==========================================================
-
     static async getLeadsForExport(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-        
         const exportQuery = `
-            SELECT 
-                l.*,
-                u.name AS owner_name
-            FROM leads l
-            LEFT JOIN users u ON u.id = l.owner_id
-            ${whereClause}
-            ORDER BY l.created_at DESC;
+            SELECT l.*, u.name AS owner_name
+            FROM leads l LEFT JOIN users u ON u.id = l.owner_id
+            ${whereClause} ORDER BY l.created_at DESC;
         `;
-        
         try {
             const result = await pool.query(exportQuery, values);
             return result.rows;
