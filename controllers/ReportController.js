@@ -1,15 +1,12 @@
-// controllers/ReportController.js (CORREÇÃO FINAL PARA DEPLOY)
+// controllers/ReportController.js
 const { pool } = require('../config/db');
 const ReportDataService = require('../services/ReportDataService');
 const CsvGeneratorService = require('../services/CsvGeneratorService'); 
 const PdfGeneratorService = require('../services/PdfGeneratorService'); 
-
-// 🚨 CORREÇÃO DE DEPLOY: A linha abaixo estava causando o erro "Cannot find module"
-// const LeadAnalyticNote = require('../models/LeadAnalyticNote'); // LINHA REMOVIDA OU COMENTADA
+// 🚨 CORREÇÃO: Removida a importação de LeadAnalyticNote para evitar o erro de deploy
 
 class ReportController {
   constructor() {
-    // Certifique-se de que o bind está usando a sintaxe correta para classes
     this.getVendors = ReportController.getVendors.bind(this);
     this.getReportData = ReportController.getReportData.bind(this);
     this.getAnalyticNotes = ReportController.getAnalyticNotes.bind(this);
@@ -17,12 +14,9 @@ class ReportController {
     this.exportPdf = ReportController.exportPdf.bind(this);
   }
 
-  /**
-   * Lista vendedores reais (tabela users). Admin vê todos, user vê só ele.
-   * @route GET /reports/vendors
-   */
   static async getVendors(req, res) {
     try {
+      // ... (Lógica inalterada)
       const isAdmin = req.user?.role === 'Admin';
       const query = isAdmin
         ? `SELECT id, name, email, role FROM users ORDER BY name;`
@@ -38,14 +32,12 @@ class ReportController {
 
   /**
    * Rota principal para buscar dados agregados do Dashboard de Relatórios.
-   * @route POST/GET /reports/data
    */
   static async getReportData(req, res) {
     try {
-      // 1. Extração de Filtros (ROBUSTA)
+      // 1. Extração e Parsing de Filtros (CRÍTICO para GET/POST)
       let filters = req.body.filters || req.query.filters || {}; 
       
-      // 🚨 CORREÇÃO CRÍTICA: Trata filtros que vêm como string na URL (GET)
       if (typeof filters === 'string') {
           try {
               filters = JSON.parse(filters);
@@ -64,6 +56,7 @@ class ReportController {
       return res.status(200).json({ success: true, data });
 
     } catch (error) {
+      // 3. Tratamento de Erro (Retorna a mensagem para o frontend)
       console.error('ERRO INTERNO: ReportController.getReportData falhou:', error.message);
       return res.status(500).json({ 
         success: false, 
@@ -72,17 +65,9 @@ class ReportController {
     }
   }
   
-  /**
-   * Rota para buscar notas analíticas de um Lead específico.
-   * (Esta função agora retorna um array vazio para não depender do módulo LeadAnalyticNote)
-   * @route GET /reports/analytic/:leadId
-   */
   static async getAnalyticNotes(req, res) {
     try {
-        const { leadId } = req.params;
-        // 🚨 Placeholder temporário para funcionar sem o modelo LeadAnalyticNote
-        // Se este módulo for implementado, a lógica de busca deve ser adicionada aqui.
-        console.warn(`Função getAnalyticNotes chamada para lead ${leadId}. Retornando placeholder.`);
+        // ... (Função placeholder)
         return res.status(200).json({ success: true, data: [] }); 
     } catch (error) {
         console.error('Erro ao buscar notas analíticas:', error);
@@ -90,12 +75,9 @@ class ReportController {
     }
   }
 
-  /**
-   * Rota de Exportação CSV
-   * @route POST/GET /reports/export/csv
-   */
   static async exportCsv(req, res) {
     try {
+      // ... (Lógica de exportação)
       const filters = req.body.filters || req.query.filters || {};
       
       if (typeof filters === 'string') {
@@ -119,12 +101,9 @@ class ReportController {
     }
   }
 
-  /**
-   * Rota de Exportação PDF
-   * @route POST/GET /reports/export/pdf
-   */
   static async exportPdf(req, res) {
     try {
+      // ... (Lógica de exportação)
       const filters = req.body.filters || req.query.filters || {};
 
       if (typeof filters === 'string') {
@@ -153,7 +132,7 @@ class ReportController {
        
        let message = 'Erro interno ao gerar PDF.';
        if (error.message.includes('Timeout') || error.message.includes('launch')) {
-        message = 'Falha crítica ao iniciar o navegador (Chromium) para o PDF. Verifique as dependências do Render.';
+        message = 'Falha crítica ao iniciar o navegador (Chromium) para o PDF.';
        }
 
        return res.status(500).json({ 

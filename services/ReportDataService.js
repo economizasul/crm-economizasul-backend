@@ -8,22 +8,19 @@ const { format } = require('date-fns');
 
 /**
  * Constrói a cláusula WHERE e os valores para as queries SQL, respeitando os filtros.
- * @param {Object} filters - Filtros de data, vendedor (ownerId) e origem (source).
- * @param {number|null} userId - ID do usuário logado (se não for Admin).
- * @param {boolean} isAdmin - Se o usuário é Admin.
- * @returns {Object} { whereClause, values }
  */
 const buildFilter = (filters, userId, isAdmin) => {
-    // Pega os filtros do frontend
     const { startDate, endDate, ownerId, source } = filters;
     
     // 🚨 CORREÇÃO DE ROBUSTEZ: Define datas padrões (hoje) se faltarem ou forem nulas.
     const defaultDateString = format(new Date(), 'yyyy-MM-dd');
 
     // Extende as datas para cobrir o dia inteiro.
-    // Garante que o valor usado na concatenação nunca é 'undefined'.
-    const formattedStartDate = `${startDate || defaultDateString} 00:00:00`;
-    const formattedEndDate = `${endDate || defaultDateString} 23:59:59`;
+    const start = startDate && startDate.trim() ? startDate : defaultDateString;
+    const end = endDate && endDate.trim() ? endDate : defaultDateString;
+
+    const formattedStartDate = `${start} 00:00:00`;
+    const formattedEndDate = `${end} 23:59:59`;
     
     // Filtro de data obrigatório (usando a data de criação do lead)
     let whereClause = `WHERE created_at BETWEEN $1 AND $2`;
@@ -32,11 +29,9 @@ const buildFilter = (filters, userId, isAdmin) => {
 
     // 1. Filtro por Vendedor (Owner)
     if (!isAdmin) {
-        // Usuário normal vê apenas seus leads
         whereClause += ` AND owner_id = $${nextIndex++}`;
         values.push(userId);
     } else if (ownerId && ownerId !== 'all') {
-        // Admin: se o filtro 'ownerId' for aplicado
         whereClause += ` AND owner_id = $${nextIndex++}`;
         values.push(ownerId);
     }
@@ -68,8 +63,9 @@ class ReportDataService {
                 
                 -- Vendas (Ganhas)
                 COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
-                -- 🚨 Atenção: Verifique se o nome da coluna é exatamente 'estimated_savings'
-                COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN estimated_savings ELSE 0 END), 0) AS total_won_value_kw,
+                
+                -- 🏆 CORREÇÃO CRÍTICA: O nome da coluna foi alterado de 'estimated_savings' para 'avg_consumption'
+                COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN avg_consumption ELSE 0 END), 0) AS total_won_value_kw,
                 
                 -- Perdas (Perdidas)
                 COALESCE(SUM(CASE WHEN status = 'Fechado Perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
@@ -84,8 +80,6 @@ class ReportDataService {
                 COALESCE(
                     AVG(
                         EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400
-                        -- Se quiser calcular apenas para Fechado Ganho, mude para:
-                        /* CASE WHEN status = 'Fechado Ganho' THEN EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400 ELSE NULL END */
                     ), 
                     0
                 ) AS avg_closing_time_days
@@ -99,19 +93,20 @@ class ReportDataService {
             const data = result.rows[0];
             if (!data) return null;
 
-            // Garante que os retornos são do tipo numérico esperado
             return {
                 totalLeads: parseInt(data.total_leads || 0),
                 totalWonCount: parseInt(data.total_won_count || 0),
-                totalWonValueKW: parseFloat(data.total_won_value_kw || 0),
+                // Garante que o valor é float
+                totalWonValueKW: parseFloat(data.total_won_value_kw || 0), 
                 totalLostCount: parseInt(data.total_lost_count || 0),
-                conversionRate: parseFloat(data.conversion_rate_percent || 0) / 100, // Converte % (0-100) de volta para decimal (0-1)
+                conversionRate: parseFloat(data.conversion_rate_percent || 0) / 100, 
                 avgClosingTimeDays: parseFloat(data.avg_closing_time_days || 0),
             };
 
         } catch (error) {
+            // Este log mostrará o erro SQL exato!
             console.error('CRITICAL SQL ERROR in getSummaryAndProductivity:', error.message);
-            throw error; // Propaga o erro para ser capturado no Controller
+            throw error; 
         }
     }
     
@@ -229,43 +224,36 @@ class ReportDataService {
      */
     static async getAllDashboardData(filters, userId, isAdmin) {
         try {
-            // Cria os filtros uma única vez para o Summary/Productivity
             const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
-            // Executa todas as consultas em paralelo para otimizar o tempo de resposta
             const [
-                summaryAndProd, // Retorna as métricas e o resumo
+                summaryAndProd, 
                 funnel,
                 lostReasons,
                 dailyActivity,
             ] = await Promise.all([
-                // Passa a cláusula WHERE e os valores já criados para evitar recálculo
                 ReportDataService.getSummaryAndProductivity(whereClause, values),
                 ReportDataService.getFunnelData(filters, userId, isAdmin),
                 ReportDataService.getLostReasonsData(filters, userId, isAdmin),
                 ReportDataService.getDailyActivity(filters, userId, isAdmin),
             ]);
             
-            // Retorna o objeto final que o frontend espera
             return {
-                globalSummary: summaryAndProd, // Contém o totalLeads, conversionRate, etc.
+                globalSummary: summaryAndProd, 
                 productivity: {
-                    // Mapeia para os dados da tabela de produtividade (usa os mesmos dados)
                     ...summaryAndProd 
                 },
                 funnel: funnel,
                 lostReasons: lostReasons,
                 dailyActivity: dailyActivity,
                 forecasting: {
-                    // Placeholder para futura implementação de previsão
                     forecastedKwWeighted: 0 
                 }
             };
             
         } catch (error) {
             console.error('CRITICAL ERROR in ReportDataService.getAllDashboardData:', error);
-            // Rejeita a promessa para que o ReportController possa capturar e retornar um 500
-            throw error;
+            throw error; 
         }
     }
     
@@ -273,9 +261,6 @@ class ReportDataService {
     // 📤 FUNÇÃO DE EXPORTAÇÃO
     // ==========================================================
 
-    /**
-     * Método auxiliar para buscar leads brutos para a exportação CSV/PDF.
-     */
     static async getLeadsForExport(filters, userId, isAdmin) {
         const { whereClause, values } = buildFilter(filters, userId, isAdmin);
         
