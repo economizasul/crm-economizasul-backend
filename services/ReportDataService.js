@@ -60,16 +60,19 @@ class ReportDataService {
                 -- Vendas (Ganhas)
                 COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
                 
-                -- 💥 CORREÇÃO DEFINITIVA COM REGEX PARA TRATAR DADOS SUJOS (R$, UNIDADES, ETC.)
+                -- 💥 CORREÇÃO DEFINITIVA (V3): REGEX + NULLIF para tratar strings vazias e dados sujos
                 COALESCE(
                     SUM(
                         CASE 
                             WHEN status = 'Fechado Ganho' THEN 
-                                regexp_replace(
-                                    REPLACE(NULLIF(TRIM(avg_consumption), ''), ',', '.'), 
-                                    '[^0-9.]', 
-                                    '', 
-                                    'g'
+                                NULLIF(
+                                    regexp_replace(
+                                        REPLACE(NULLIF(TRIM(avg_consumption), ''), ',', '.'), 
+                                        '[^0-9.]', 
+                                        '', 
+                                        'g'
+                                    ),
+                                    '' -- CRÍTICO: Converte string vazia resultante do regex para NULL
                                 )::numeric
                             ELSE 
                                 0 
@@ -104,6 +107,8 @@ class ReportDataService {
             const data = result.rows[0];
             if (!data) return null;
 
+            // ... (resto do mapeamento de dados)
+
             return {
                 totalLeads: parseInt(data.total_leads || 0),
                 totalWonCount: parseInt(data.total_won_count || 0),
@@ -114,7 +119,7 @@ class ReportDataService {
             };
 
         } catch (error) {
-            // Este log detalhado é a chave: se falhar, o Render mostrará o erro SQL exato
+            // Log detalhado para capturar a mensagem de erro SQL exata no Render
             console.error('CRITICAL SQL ERROR in getSummaryAndProductivity:', error.message, 'Query:', query, 'Values:', values);
             throw error; 
         }
