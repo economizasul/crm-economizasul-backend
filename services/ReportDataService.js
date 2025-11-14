@@ -17,12 +17,13 @@ const buildFilter = (filters, userId, isAdmin) => {
     // Pega os filtros do frontend
     const { startDate, endDate, ownerId, source } = filters;
     
-    // 🚨 CORREÇÃO DE ROBUSTEZ: Define datas padrões se faltarem (embora o frontend deva sempre enviar)
-    const defaultDate = format(new Date(), 'yyyy-MM-dd');
+    // 🚨 CORREÇÃO DE ROBUSTEZ: Define datas padrões (hoje) se faltarem ou forem nulas.
+    const defaultDateString = format(new Date(), 'yyyy-MM-dd');
 
-    // Extende as datas para cobrir o dia inteiro
-    const formattedStartDate = `${startDate || defaultDate} 00:00:00`;
-    const formattedEndDate = `${endDate || defaultDate} 23:59:59`;
+    // Extende as datas para cobrir o dia inteiro.
+    // Garante que o valor usado na concatenação nunca é 'undefined'.
+    const formattedStartDate = `${startDate || defaultDateString} 00:00:00`;
+    const formattedEndDate = `${endDate || defaultDateString} 23:59:59`;
     
     // Filtro de data obrigatório (usando a data de criação do lead)
     let whereClause = `WHERE created_at BETWEEN $1 AND $2`;
@@ -58,7 +59,6 @@ class ReportDataService {
 
     /**
      * Busca métricas de Produtividade, Conversão e Resumo Geral.
-     * Esta query é crucial e foi otimizada para evitar NULLs e divisão por zero.
      */
     static async getSummaryAndProductivity(whereClause, values) {
         const query = `
@@ -68,6 +68,7 @@ class ReportDataService {
                 
                 -- Vendas (Ganhas)
                 COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
+                -- 🚨 Atenção: Verifique se o nome da coluna é exatamente 'estimated_savings'
                 COALESCE(SUM(CASE WHEN status = 'Fechado Ganho' THEN estimated_savings ELSE 0 END), 0) AS total_won_value_kw,
                 
                 -- Perdas (Perdidas)
@@ -75,13 +76,17 @@ class ReportDataService {
                 
                 -- Conversão de Vendas (Leads Ganhas / Total de Leads)
                 COALESCE(
-                    SUM(CASE WHEN status = 'Fechado Ganho' THEN 1 ELSE 0 END)::numeric * 100 / NULLIF(COUNT(*), 0), 
+                    (SUM(CASE WHEN status = 'Fechado Ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 
                     0
                 ) AS conversion_rate_percent,
                 
-                -- Tempo Médio de Fechamento (em dias, para leads 'Fechado Ganho')
+                -- Tempo Médio de Fechamento (em dias)
                 COALESCE(
-                    AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400), -- 86400 segundos em um dia
+                    AVG(
+                        EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400
+                        -- Se quiser calcular apenas para Fechado Ganho, mude para:
+                        /* CASE WHEN status = 'Fechado Ganho' THEN EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400 ELSE NULL END */
+                    ), 
                     0
                 ) AS avg_closing_time_days
 
@@ -91,16 +96,16 @@ class ReportDataService {
         
         try {
             const result = await pool.query(query, values);
-            // 🚨 GARANTINDO TIPOS CORRETOS
             const data = result.rows[0];
-            if (!data) return null; // Não deveria acontecer, mas é uma proteção
+            if (!data) return null;
 
+            // Garante que os retornos são do tipo numérico esperado
             return {
                 totalLeads: parseInt(data.total_leads || 0),
                 totalWonCount: parseInt(data.total_won_count || 0),
                 totalWonValueKW: parseFloat(data.total_won_value_kw || 0),
                 totalLostCount: parseInt(data.total_lost_count || 0),
-                conversionRate: parseFloat(data.conversion_rate_percent || 0) / 100, // Converte % de volta para 0-1
+                conversionRate: parseFloat(data.conversion_rate_percent || 0) / 100, // Converte % (0-100) de volta para decimal (0-1)
                 avgClosingTimeDays: parseFloat(data.avg_closing_time_days || 0),
             };
 
@@ -128,7 +133,6 @@ class ReportDataService {
 
         try {
             const result = await pool.query(query, values);
-            // Mapeamento simples
             return result.rows.map(row => ({
                 stageName: row.stage_name,
                 count: parseInt(row.count || 0)
@@ -161,7 +165,7 @@ class ReportDataService {
             FROM leads
             ${whereClause}
             AND status = 'Fechado Perdido'
-            AND lost_reason IS NOT NULL -- Ignora motivos de perda vazios
+            AND lost_reason IS NOT NULL 
             GROUP BY lost_reason
             ORDER BY count DESC;
         `;
@@ -195,7 +199,6 @@ class ReportDataService {
 
         const query = `
             SELECT
-                -- Extrai a data do timestamp (PostgreSQL usa ::date)
                 created_at::date AS activity_date,
                 COUNT(*) AS leads_created
             FROM leads
@@ -223,21 +226,21 @@ class ReportDataService {
 
     /**
      * Função principal que orquestra a busca de todos os dados do dashboard.
-     * @param {Object} filters - Filtros enviados pelo frontend.
-     * @param {number|null} userId - ID do usuário logado.
-     * @param {boolean} isAdmin - Se o usuário é Admin.
-     * @returns {Promise<Object>} Dados do dashboard.
      */
     static async getAllDashboardData(filters, userId, isAdmin) {
         try {
+            // Cria os filtros uma única vez para o Summary/Productivity
+            const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
             // Executa todas as consultas em paralelo para otimizar o tempo de resposta
             const [
-                productivity,
+                summaryAndProd, // Retorna as métricas e o resumo
                 funnel,
                 lostReasons,
                 dailyActivity,
             ] = await Promise.all([
-                ReportDataService.getSummaryAndProductivity(buildFilter(filters, userId, isAdmin).whereClause, buildFilter(filters, userId, isAdmin).values),
+                // Passa a cláusula WHERE e os valores já criados para evitar recálculo
+                ReportDataService.getSummaryAndProductivity(whereClause, values),
                 ReportDataService.getFunnelData(filters, userId, isAdmin),
                 ReportDataService.getLostReasonsData(filters, userId, isAdmin),
                 ReportDataService.getDailyActivity(filters, userId, isAdmin),
@@ -245,10 +248,14 @@ class ReportDataService {
             
             // Retorna o objeto final que o frontend espera
             return {
-                productivity,
-                funnel,
-                lostReasons,
-                dailyActivity,
+                globalSummary: summaryAndProd, // Contém o totalLeads, conversionRate, etc.
+                productivity: {
+                    // Mapeia para os dados da tabela de produtividade (usa os mesmos dados)
+                    ...summaryAndProd 
+                },
+                funnel: funnel,
+                lostReasons: lostReasons,
+                dailyActivity: dailyActivity,
                 forecasting: {
                     // Placeholder para futura implementação de previsão
                     forecastedKwWeighted: 0 
@@ -256,10 +263,9 @@ class ReportDataService {
             };
             
         } catch (error) {
-            // 🚨 NOVO TRATAMENTO DE ERRO COM THROW
             console.error('CRITICAL ERROR in ReportDataService.getAllDashboardData:', error);
-            // Rejeita a promessa para que o ReportController possa capturar e retornar um 500 com a mensagem de erro
-            throw new Error('Falha ao gerar dados de relatório: ' + error.message);
+            // Rejeita a promessa para que o ReportController possa capturar e retornar um 500
+            throw error;
         }
     }
     
