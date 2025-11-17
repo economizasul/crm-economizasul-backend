@@ -181,21 +181,30 @@ async function getDailyActivity(filters, userId, isAdmin) {
  */
 async function getMapLocations(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-  // Limit para performance (evitar milhares de pontos na primeira versão)
+
   const q = `
     SELECT 
-      COALESCE(NULLIF(TRIM(address), ''), '') AS address_raw,
-      COALESCE(NULLIF(TRIM((metadata->>'city')::text), ''), NULLIF(TRIM(split_part(address, ',', 1)), '')) AS city,
+      city,
       COUNT(*)::int AS count,
       AVG(lat)::numeric AS lat,
       AVG(lng)::numeric AS lng
-    FROM leads
-    ${whereClause} AND LOWER(status) = 'fechado ganho'
-    GROUP BY city, address_raw
-    HAVING COALESCE(NULLIF(TRIM(city),''), '') <> ''
+    FROM (
+      SELECT
+        COALESCE(
+          NULLIF(TRIM((metadata->>'city')::text), ''),
+          NULLIF(TRIM(split_part(address, ',', 1)), '')
+        ) AS city,
+        lat,
+        lng
+      FROM leads
+      ${whereClause} AND LOWER(status) = 'fechado ganho'
+    ) AS sub
+    WHERE city IS NOT NULL AND city <> ''
+    GROUP BY city
     ORDER BY count DESC
     LIMIT 200
   `;
+
   try {
     const r = await pool.query(q, values);
     return r.rows.map(row => ({
