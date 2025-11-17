@@ -1,6 +1,6 @@
 // services/ReportDataService.js
 const pool = require('../db');
-const { format, parseISO } = require('date-fns');
+const { format, subDays } = require('date-fns');
 
 /**
  * buildFilter(filters, userId, isAdmin)
@@ -9,13 +9,14 @@ const { format, parseISO } = require('date-fns');
 function buildFilter(filters = {}, userId = null, isAdmin = false) {
   const { startDate, endDate, ownerId, source } = filters || {};
 
-  // default: today if not provided
-  const todayStr = format(new Date(), 'yyyy-MM-dd');
+  // Se não houver datas, padrão para últimos 30 dias
+  const today = new Date();
+  const defaultEnd = format(today, 'yyyy-MM-dd');
+  const defaultStart = format(subDays(today, 29), 'yyyy-MM-dd'); // últimos 30 dias
 
-  const start = startDate && String(startDate).trim() ? String(startDate) : todayStr;
-  const end = endDate && String(endDate).trim() ? String(endDate) : todayStr;
+  const start = startDate && String(startDate).trim() ? String(startDate) : defaultStart;
+  const end = endDate && String(endDate).trim() ? String(endDate) : defaultEnd;
 
-  // inclusive end -> add 1 day at comparison layer or use 23:59:59
   const startTs = `${start} 00:00:00`;
   const endTs = `${end} 23:59:59`;
 
@@ -24,7 +25,6 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
   let idx = 3;
 
   if (!isAdmin) {
-    // user sees own leads
     if (userId) {
       where += ` AND owner_id = $${idx++}`;
       values.push(userId);
@@ -44,7 +44,6 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
 
 /**
  * getSummaryAndProductivity(whereClause, values)
- * Retorna métricas agregadas: totalLeads, totalWonCount, totalWonValueKW, totalLostCount, conversionRate, avgClosingTimeDays
  */
 async function getSummaryAndProductivity(whereClause, values) {
   const query = `
@@ -98,7 +97,6 @@ async function getSummaryAndProductivity(whereClause, values) {
 
 /**
  * getFunnelData(filters, userId, isAdmin)
- * Retorna array { stageName, count }
  */
 async function getFunnelData(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
@@ -114,13 +112,14 @@ async function getFunnelData(filters, userId, isAdmin) {
     return r.rows.map(rw => ({ stageName: rw.stage_name, count: parseInt(rw.count || 0, 10) }));
   } catch (err) {
     console.error('SQL ERROR getFunnelData:', err.message);
+    console.error('Query:', q);
+    console.error('Values:', values);
     throw err;
   }
 }
 
 /**
  * getLostReasonsData
- * Retorna { reasons: [{ reason, count }], totalLost }
  */
 async function getLostReasonsData(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
@@ -147,13 +146,13 @@ async function getLostReasonsData(filters, userId, isAdmin) {
     return { reasons, totalLost };
   } catch (err) {
     console.error('SQL ERROR getLostReasonsData:', err.message);
+    console.error('Values:', values);
     throw err;
   }
 }
 
 /**
  * getDailyActivity
- * Retorna array { date, count }
  */
 async function getDailyActivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
@@ -169,13 +168,52 @@ async function getDailyActivity(filters, userId, isAdmin) {
     return r.rows.map(row => ({ date: row.activity_date, count: parseInt(row.leads_created || 0, 10) }));
   } catch (err) {
     console.error('SQL ERROR getDailyActivity:', err.message);
+    console.error('Query:', q);
+    console.error('Values:', values);
     throw err;
   }
 }
 
 /**
- * getLeadsForExport(filters, userId, isAdmin)
- * Retorna rows completos para export
+ * getMapLocations
+ * retorna array [{ city, count, lat, lng }]
+ * usa lat/lng médios por cidade quando disponíveis
+ */
+async function getMapLocations(filters, userId, isAdmin) {
+  const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+  // Limit para performance (evitar milhares de pontos na primeira versão)
+  const q = `
+    SELECT 
+      COALESCE(NULLIF(TRIM(address), ''), '') AS address_raw,
+      COALESCE(NULLIF(TRIM((metadata->>'city')::text), ''), NULLIF(TRIM(split_part(address, ',', 1)), '')) AS city,
+      COUNT(*)::int AS count,
+      AVG(lat)::numeric AS lat,
+      AVG(lng)::numeric AS lng
+    FROM leads
+    ${whereClause} AND LOWER(status) = 'fechado ganho'
+    GROUP BY city, address_raw
+    HAVING COALESCE(NULLIF(TRIM(city),''), '') <> ''
+    ORDER BY count DESC
+    LIMIT 200
+  `;
+  try {
+    const r = await pool.query(q, values);
+    return r.rows.map(row => ({
+      city: row.city,
+      count: parseInt(row.count || 0, 10),
+      lat: row.lat ? parseFloat(row.lat) : null,
+      lng: row.lng ? parseFloat(row.lng) : null
+    }));
+  } catch (err) {
+    console.error('SQL ERROR getMapLocations:', err.message);
+    console.error('Query:', q);
+    console.error('Values:', values);
+    throw err;
+  }
+}
+
+/**
+ * getLeadsForExport
  */
 async function getLeadsForExport(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
@@ -191,13 +229,14 @@ async function getLeadsForExport(filters, userId, isAdmin) {
     return r.rows || [];
   } catch (err) {
     console.error('SQL ERROR getLeadsForExport:', err.message);
+    console.error('Query:', q);
+    console.error('Values:', values);
     throw err;
   }
 }
 
 /**
- * getAllDashboardData(filters, userId, isAdmin)
- * Função principal que agrupa tudo
+ * getAllDashboardData
  */
 async function getAllDashboardData(filters = {}, userId = null, isAdmin = false) {
   try {
@@ -207,12 +246,14 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
       summary,
       funnel,
       lostReasons,
-      dailyActivity
+      dailyActivity,
+      mapLocations
     ] = await Promise.all([
       getSummaryAndProductivity(whereClause, values),
       getFunnelData(filters, userId, isAdmin),
       getLostReasonsData(filters, userId, isAdmin),
-      getDailyActivity(filters, userId, isAdmin)
+      getDailyActivity(filters, userId, isAdmin),
+      getMapLocations(filters, userId, isAdmin)
     ]);
 
     return {
@@ -221,6 +262,7 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
       funnel: funnel,
       lostReasons: lostReasons,
       dailyActivity: dailyActivity,
+      mapLocations: mapLocations,
       forecasting: { forecastedKwWeighted: 0 }
     };
   } catch (err) {
@@ -236,5 +278,6 @@ module.exports = {
   getLostReasonsData,
   getDailyActivity,
   getLeadsForExport,
+  getMapLocations,
   getAllDashboardData
 };
