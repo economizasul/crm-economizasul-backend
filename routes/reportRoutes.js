@@ -8,9 +8,11 @@ router.use(protect);
 
 router.get('/sellers', ReportController.getVendors);
 
-// Permite compatibilidade com /reports e /reports/data
 router.post('/', ReportController.getReportData);
 router.post('/data', ReportController.getReportData);
+
+// NOVA ROTA PARA O MAPA INTERATIVO
+router.post('/leads-ganho-mapa', ReportController.getLeadsGanhoParaMapa);
 
 router.get('/notes/:leadId', ReportController.getAnalyticNotes);
 
