@@ -94,7 +94,6 @@ async function getSummaryAndProductivity(whereClause, values) {
     throw err;
   }
 }
-
 /**
  * getFunnelData
  */

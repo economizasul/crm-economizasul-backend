@@ -95,7 +95,6 @@ const Lead = {
       VALUES (${placeholders}) 
       RETURNING *
     `;
-
     const { rows } = await pool.query(q, vals);
     return rows[0];
   }
