@@ -40,7 +40,6 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
   return { whereClause: where, values };
 }
 
-
 async function getSummaryAndProductivity(whereClause, values) {
   const query = `
     SELECT

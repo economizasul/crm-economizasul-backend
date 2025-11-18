@@ -30,7 +30,7 @@ const Lead = {
       );
     `);
   },
-//* Teste*
+
   async findById(id) {
     const { rows } = await pool.query(
       `SELECT l.*, u.name AS owner_name 
