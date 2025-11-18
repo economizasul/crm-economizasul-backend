@@ -120,7 +120,9 @@ class ReportController {
           l.cidade,
           l.google_maps_link,
           l.regiao
+          l.vendedor_id, u.name as vendedor_name
         FROM leads l
+        LEFT JOIN users u ON l.vendedor_id = u.id
         WHERE l.status = 'Ganho'
           AND l.deleted_at IS NULL
           AND l.google_maps_link IS NOT NULL
