@@ -4,18 +4,16 @@ const { format, subDays } = require('date-fns');
 
 /**
  * buildFilter(filters, userId, isAdmin)
- * Retorna whereClause e array de values para queries parametrizadas
  */
 function buildFilter(filters = {}, userId = null, isAdmin = false) {
   const { startDate, endDate, ownerId, source } = filters || {};
 
-  // Se não houver datas, padrão para últimos 30 dias
   const today = new Date();
   const defaultEnd = format(today, 'yyyy-MM-dd');
-  const defaultStart = format(subDays(today, 29), 'yyyy-MM-dd'); // últimos 30 dias
+  const defaultStart = format(subDays(today, 29), 'yyyy-MM-dd');
 
-  const start = startDate && String(startDate).trim() ? String(startDate) : defaultStart;
-  const end = endDate && String(endDate).trim() ? String(endDate) : defaultEnd;
+  const start = startDate || defaultStart;
+  const end = endDate || defaultEnd;
 
   const startTs = `${start} 00:00:00`;
   const endTs = `${end} 23:59:59`;
@@ -43,32 +41,37 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
 }
 
 /**
- * getSummaryAndProductivity(whereClause, values)
+ * RESOLVIDO: KPIs históricos e totais
  */
 async function getSummaryAndProductivity(whereClause, values) {
   const query = `
     SELECT
       COALESCE(COUNT(*), 0) AS total_leads,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'fechado ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
+
+      -- ✔ LEADS GANHOS (status = 'Ganho')
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
+
+      -- ✔ KW vendido (usa avg_consumption direto pois é numérico)
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN avg_consumption ELSE 0 END), 0) AS total_won_value_kw,
+
+      -- ✔ PERDIDOS
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
+
+      -- ✔ Taxa de conversão
       COALESCE(
-        SUM(
-          CASE
-            WHEN LOWER(status) = 'fechado ganho' THEN
-              NULLIF(
-                regexp_replace(REPLACE(NULLIF(TRIM(COALESCE(avg_consumption::text, '')), ''), ',', '.'), '[^0-9.]', '', 'g')
-                , ''
-              )::numeric
-            ELSE 0
-          END
-        ), 0
-      ) AS total_won_value_kw,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'fechado perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
-      COALESCE(
-        (SUM(CASE WHEN LOWER(status) = 'fechado ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0),
+        (SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0),
         0
       ) AS conversion_rate_percent,
+
+      -- ✔ Tempo médio de conversão: usa date_won
       COALESCE(
-        AVG(EXTRACT(EPOCH FROM (updated_at - created_at)) / 86400),
+        AVG(
+          CASE 
+            WHEN LOWER(status) = 'Ganho' AND date_won IS NOT NULL 
+            THEN EXTRACT(EPOCH FROM (date_won - created_at)) / 86400
+            ELSE NULL
+          END
+        ),
         0
       ) AS avg_closing_time_days
     FROM leads
@@ -80,12 +83,12 @@ async function getSummaryAndProductivity(whereClause, values) {
     const row = result.rows[0] || {};
 
     return {
-      totalLeads: parseInt(row.total_leads || 0, 10),
-      totalWonCount: parseInt(row.total_won_count || 0, 10),
-      totalWonValueKW: parseFloat(row.total_won_value_kw || 0),
-      totalLostCount: parseInt(row.total_lost_count || 0, 10),
-      conversionRate: parseFloat(row.conversion_rate_percent || 0) / 100,
-      avgClosingTimeDays: parseFloat(row.avg_closing_time_days || 0)
+      totalLeads: Number(row.total_leads || 0),
+      totalWonCount: Number(row.total_won_count || 0),
+      totalWonValueKW: Number(row.total_won_value_kw || 0),
+      totalLostCount: Number(row.total_lost_count || 0),
+      conversionRate: Number(row.conversion_rate_percent || 0) / 100,
+      avgClosingTimeDays: Number(row.avg_closing_time_days || 0),
     };
   } catch (err) {
     console.error('SQL ERROR getSummaryAndProductivity:', err.message);
@@ -96,7 +99,7 @@ async function getSummaryAndProductivity(whereClause, values) {
 }
 
 /**
- * getFunnelData(filters, userId, isAdmin)
+ * getFunnelData
  */
 async function getFunnelData(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
@@ -109,11 +112,9 @@ async function getFunnelData(filters, userId, isAdmin) {
   `;
   try {
     const r = await pool.query(q, values);
-    return r.rows.map(rw => ({ stageName: rw.stage_name, count: parseInt(rw.count || 0, 10) }));
+    return r.rows.map(rw => ({ stageName: rw.stage_name, count: Number(rw.count || 0) }));
   } catch (err) {
     console.error('SQL ERROR getFunnelData:', err.message);
-    console.error('Query:', q);
-    console.error('Values:', values);
     throw err;
   }
 }
@@ -123,30 +124,32 @@ async function getFunnelData(filters, userId, isAdmin) {
  */
 async function getLostReasonsData(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
   const totalLostQuery = `
     SELECT COALESCE(COUNT(*),0) AS total_lost
     FROM leads
-    ${whereClause} AND LOWER(status) = 'fechado perdido'
+    ${whereClause} AND LOWER(status) = 'perdido'
   `;
   const reasonsQuery = `
     SELECT reason_for_loss AS reason, COUNT(*)::int AS count
     FROM leads
     ${whereClause}
-    AND LOWER(status) = 'fechado perdido' AND reason_for_loss IS NOT NULL
+    AND LOWER(status) = 'perdido' AND reason_for_loss IS NOT NULL
     GROUP BY reason_for_loss
     ORDER BY count DESC
   `;
+
   try {
     const [totalLostRes, reasonsRes] = await Promise.all([
       pool.query(totalLostQuery, values),
       pool.query(reasonsQuery, values)
     ]);
-    const totalLost = parseInt(totalLostRes.rows[0]?.total_lost || 0, 10);
-    const reasons = reasonsRes.rows.map(r => ({ reason: r.reason, count: parseInt(r.count || 0, 10) }));
+
+    const totalLost = Number(totalLostRes.rows[0]?.total_lost || 0);
+    const reasons = reasonsRes.rows.map(r => ({ reason: r.reason, count: Number(r.count || 0) }));
     return { reasons, totalLost };
   } catch (err) {
     console.error('SQL ERROR getLostReasonsData:', err.message);
-    console.error('Values:', values);
     throw err;
   }
 }
@@ -156,8 +159,9 @@ async function getLostReasonsData(filters, userId, isAdmin) {
  */
 async function getDailyActivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
   const q = `
-    SELECT (created_at::date) AS activity_date, COUNT(*)::int AS leads_created
+    SELECT created_at::date AS activity_date, COUNT(*)::int AS leads_created
     FROM leads
     ${whereClause}
     GROUP BY created_at::date
@@ -165,19 +169,18 @@ async function getDailyActivity(filters, userId, isAdmin) {
   `;
   try {
     const r = await pool.query(q, values);
-    return r.rows.map(row => ({ date: row.activity_date, count: parseInt(row.leads_created || 0, 10) }));
+    return r.rows.map(row => ({
+      date: row.activity_date,
+      count: Number(row.leads_created || 0)
+    }));
   } catch (err) {
     console.error('SQL ERROR getDailyActivity:', err.message);
-    console.error('Query:', q);
-    console.error('Values:', values);
     throw err;
   }
 }
 
 /**
  * getMapLocations
- * retorna array [{ city, count, lat, lng }]
- * usa lat/lng médios por cidade quando disponíveis
  */
 async function getMapLocations(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
@@ -197,7 +200,7 @@ async function getMapLocations(filters, userId, isAdmin) {
         lat,
         lng
       FROM leads
-      ${whereClause} AND LOWER(status) = 'fechado ganho'
+      ${whereClause} AND LOWER(status) = 'Ganho'
     ) AS sub
     WHERE city IS NOT NULL AND city <> ''
     GROUP BY city
@@ -207,16 +210,15 @@ async function getMapLocations(filters, userId, isAdmin) {
 
   try {
     const r = await pool.query(q, values);
+
     return r.rows.map(row => ({
       city: row.city,
-      count: parseInt(row.count || 0, 10),
-      lat: row.lat ? parseFloat(row.lat) : null,
-      lng: row.lng ? parseFloat(row.lng) : null
+      count: Number(row.count || 0),
+      lat: row.lat ? Number(row.lat) : null,
+      lng: row.lng ? Number(row.lng) : null
     }));
   } catch (err) {
     console.error('SQL ERROR getMapLocations:', err.message);
-    console.error('Query:', q);
-    console.error('Values:', values);
     throw err;
   }
 }
@@ -226,6 +228,7 @@ async function getMapLocations(filters, userId, isAdmin) {
  */
 async function getLeadsForExport(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
   const q = `
     SELECT l.*, u.name AS owner_name
     FROM leads l
@@ -235,11 +238,9 @@ async function getLeadsForExport(filters, userId, isAdmin) {
   `;
   try {
     const r = await pool.query(q, values);
-    return r.rows || [];
+    return r.rows;
   } catch (err) {
     console.error('SQL ERROR getLeadsForExport:', err.message);
-    console.error('Query:', q);
-    console.error('Values:', values);
     throw err;
   }
 }
@@ -268,10 +269,10 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
     return {
       globalSummary: summary,
       productivity: { ...summary },
-      funnel: funnel,
-      lostReasons: lostReasons,
-      dailyActivity: dailyActivity,
-      mapLocations: mapLocations,
+      funnel,
+      lostReasons,
+      dailyActivity,
+      mapLocations,
       forecasting: { forecastedKwWeighted: 0 }
     };
   } catch (err) {

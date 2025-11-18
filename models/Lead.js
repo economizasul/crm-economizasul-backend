@@ -21,6 +21,7 @@ const Lead = {
         notes TEXT,
         lat NUMERIC,
         lng NUMERIC,
+        kw_sold DOUBLE PRECISION DEFAULT 0,   -- 👈 ADICIONADO (usado no dashboard)
         metadata JSONB DEFAULT '{}'::jsonb,
         reason_for_loss VARCHAR(255),
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
@@ -32,7 +33,11 @@ const Lead = {
 
   async findById(id) {
     const { rows } = await pool.query(
-      `SELECT l.*, u.name AS owner_name FROM leads l LEFT JOIN users u ON u.id = l.owner_id WHERE l.id = $1 LIMIT 1`,
+      `SELECT l.*, u.name AS owner_name 
+       FROM leads l 
+       LEFT JOIN users u ON u.id = l.owner_id 
+       WHERE l.id = $1 
+       LIMIT 1`,
       [id]
     );
     return rows[0] || null;
@@ -60,7 +65,6 @@ const Lead = {
     }
 
     if (userRole !== 'Admin') {
-      // vendedor comum: só vê os próprios leads (ownerId deverá ser passado)
       if (ownerId) {
         query += ` AND l.owner_id = $${idx++}`;
         values.push(ownerId);
@@ -79,11 +83,19 @@ const Lead = {
   async insert(payload) {
     const fields = [
       'name','email','phone','document','address','status','origin','owner_id',
-      'uc','avg_consumption','estimated_savings','qsa','notes','lat','lng','metadata','reason_for_loss'
+      'uc','avg_consumption','estimated_savings','qsa','notes','lat','lng',
+      'kw_sold','metadata','reason_for_loss'
     ];
+
     const vals = fields.map(f => payload[f] === undefined ? null : payload[f]);
     const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
-    const q = `INSERT INTO leads (${fields.join(',')}) VALUES(${placeholders}) RETURNING *`;
+
+    const q = `
+      INSERT INTO leads (${fields.join(',')}) 
+      VALUES (${placeholders}) 
+      RETURNING *
+    `;
+
     const { rows } = await pool.query(q, vals);
     return rows[0];
   }
