@@ -1,6 +1,7 @@
 // models/Lead.js
 const pool = require('../db');
 
+
 const Lead = {
   async createTable() {
     await pool.query(`
