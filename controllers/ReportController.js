@@ -116,15 +116,21 @@ class ReportController {
       const isAdmin = req.user?.role === 'Admin';
 
       let query = `
-        SELECT 
-          l.cidade,
-          l.google_maps_link,
-          l.regiao,
-          l.vendedor_id, 
-          u.name as vendedor_name
-        FROM leads l
-        LEFT JOIN users u ON l.vendedor_id = u.id
-        WHERE l.status = 'Ganho'
+          SELECT 
+              l.id,
+              l.name,
+              l.cidade,
+              l.regiao,
+              l.google_maps_link,
+              l.lat,
+              l.lng,
+              l.created_at,
+              l.updated_at,
+              l.seller_id,
+              u.name as seller_name
+          FROM leads l
+          LEFT JOIN users u ON u.id = l.seller_id
+          WHERE l.status = 'Ganho'
           AND l.deleted_at IS NULL
           AND l.google_maps_link IS NOT NULL
           AND l.google_maps_link != ''

@@ -78,6 +78,41 @@ async function getSummaryAndProductivity(whereClause, values) {
   try {
     const result = await pool.query(query, values);
     const row = result.rows[0] || {};
+    const leadQuery = `
+      SELECT id, status, created_at, updated_at
+      FROM leads
+      ${whereClause}
+    `;
+
+    const leadRes = await pool.query(leadQuery, values);
+    const leads = leadRes.rows || [];
+    const ganhos = leads.filter(l => l.status?.toLowerCase() === 'ganho');
+
+    let tempoMedioFechamentoHoras = 0;
+
+    if (ganhos.length > 0) {
+      tempoMedioFechamentoHoras =
+        ganhos.reduce((acc, l) => {
+          const criacao = new Date(l.created_at);
+          const fechamento = new Date(l.updated_at);
+          return acc + (fechamento - criacao) / (1000 * 60 * 60);
+        }, 0) / ganhos.length;
+    }
+
+    const ativos = leads.filter(
+      l => l.status?.toLowerCase() !== 'ganho' && l.status?.toLowerCase() !== 'perdido'
+    );
+
+    let tempoMedioAtendimentoHoras = 0;
+
+    if (ativos.length > 0) {
+      tempoMedioAtendimentoHoras =
+        ativos.reduce((acc, l) => {
+          const criacao = new Date(l.created_at);
+          const atualizacao = new Date(l.updated_at);
+          return acc + (atualizacao - criacao) / (1000 * 60 * 60);
+        }, 0) / ativos.length;
+    }
 
     return {
       totalLeads: Number(row.total_leads || 0),
@@ -86,7 +121,11 @@ async function getSummaryAndProductivity(whereClause, values) {
       totalLostCount: Number(row.total_lost_count || 0),
       conversionRate: Number(row.conversion_rate_percent || 0) / 100,
       avgClosingTimeDays: Number(row.avg_closing_time_days || 0),
-    };
+
+      tempoMedioFechamentoHoras,
+      tempoMedioAtendimentoHoras
+};
+
   } catch (err) {
     console.error('SQL ERROR getSummaryAndProductivity:', err.message);
     console.error('Query:', query);
