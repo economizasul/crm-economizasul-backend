@@ -100,6 +100,27 @@ const Lead = {
     `;
     const { rows } = await pool.query(q, vals);
     return rows[0];
+  },
+
+  // 🔥 ADICIONE O MÉTODO update() AQUI
+  async update(id, payload) {
+    const fields = Object.keys(payload);
+
+    if (fields.length === 0) return null;
+
+    const setExpressions = fields.map((key, i) => `${key} = $${i + 1}`);
+    const values = Object.values(payload);
+
+    const query = `
+      UPDATE leads
+      SET ${setExpressions.join(', ')}, updated_at = NOW()
+      WHERE id = $${fields.length + 1}
+      RETURNING *;
+    `;
+
+    const { rows } = await pool.query(query, [...values, id]);
+
+    return rows[0] || null;
   }
 };
 
