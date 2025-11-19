@@ -14,50 +14,55 @@ class LeadController {
   }
 
   /** 🔹 Formata o objeto Lead de forma segura */
-  formatLeadResponse(lead) {
-    let notesArray = [];
+  /** 🔹 Formata o objeto Lead de forma segura */
+formatLeadResponse(lead) {
+  let notesArray = [];
 
-    if (lead.notes) {
-      try {
-        const parsed = JSON.parse(lead.notes);
-        if (Array.isArray(parsed)) {
-          notesArray = parsed.filter(note => note && note.text);
-        }
-      } catch (e) {
-        notesArray = [{
-          text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
-          timestamp: Date.now(),
-          user: 'Sistema'
-        }];
+  if (lead.notes) {
+    try {
+      const parsed = JSON.parse(lead.notes);
+      if (Array.isArray(parsed)) {
+        notesArray = parsed.filter(note => note && note.text);
       }
+    } catch (e) {
+      notesArray = [{
+        text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
+        timestamp: Date.now(),
+        user: 'Sistema'
+      }];
     }
-
-    return {
-      _id: lead.id,
-      id: lead.id,
-      name: lead.name || 'Sem nome',
-      email: lead.email || null,
-      phone: lead.phone,
-      document: lead.document || null,
-      address: lead.address || null,
-      status: lead.status || 'Novo',
-      origin: lead.origin || 'Manual',
-      ownerId: lead.owner_id,
-      ownerName: lead.owner_name || 'Desconhecido',
-      uc: lead.uc || null,
-      avgConsumption: lead.avg_consumption || null,
-      estimatedSavings: lead.estimated_savings || null,
-      qsa: lead.qsa || null,
-      notes: notesArray,
-      createdAt: lead.created_at,
-      updatedAt: lead.updated_at,
-      lat: lead.lat,
-      lng: lead.lng,
-      cidade: lead.cidade,
-      regiao: lead.regiao,
-      googleMapsLink: lead.google_maps_link,
-    };
   }
+
+  return {
+    _id: lead.id,
+    id: lead.id,
+    name: lead.name || 'Sem nome',
+    email: lead.email || null,
+    phone: lead.phone,
+    document: lead.document || null,
+    address: lead.address || null,
+    status: lead.status || 'Novo',
+    origin: lead.origin || 'Manual',
+    ownerId: lead.owner_id,
+    ownerName: lead.owner_name || 'Desconhecido',
+    uc: lead.uc || null,
+    avgConsumption: lead.avg_consumption || null,
+    estimatedSavings: lead.estimated_savings || null,
+    qsa: lead.qsa || null,
+    notes: notesArray,
+
+    // 🟢 CAMPOS NOVOS
+    lat: lead.lat || null,
+    lng: lead.lng || null,
+    google_maps_link: lead.google_maps_link || null,
+    cidade: lead.cidade || null,
+    regiao: lead.regiao || null,
+
+    createdAt: lead.created_at,
+    updatedAt: lead.updated_at,
+  };
+}
+
 
 /** 🔹 Criação de Lead com geocodificação (BACKEND) */
 async createLead(req, res) {
