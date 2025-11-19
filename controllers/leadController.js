@@ -51,18 +51,25 @@ class LeadController {
       notes: notesArray,
       createdAt: lead.created_at,
       updatedAt: lead.updated_at,
+      lat: lead.lat,
+      lng: lead.lng,
+      cidade: lead.cidade,
+      regiao: lead.regiao,
+      googleMapsLink: lead.google_maps_link,
     };
   }
 
-  /** 🔹 Criação de Lead com nota inicial e owner_id do usuário logado */
-  async createLead(req, res) {
+/** 🔹 Criação de Lead com geocodificação (BACKEND) */
+async createLead(req, res) {
+  try {
     const {
-      name, email, phone, document, address, status, origin, uc,
-      avg_consumption, estimated_savings, qsa, owner_id: bodyOwnerId
+      name, email, phone, document, address, status, origin,
+      uc, avg_consumption, estimated_savings, qsa, owner_id: bodyOwnerId
     } = req.body;
 
     const finalOwnerId = bodyOwnerId || req.user.id;
 
+    // 🛑 Validações básicas
     if (!name?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
     if (!phone?.replace(/\D/g, '')?.trim()) return res.status(400).json({ error: 'Telefone é obrigatório.' });
     if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });
@@ -72,47 +79,87 @@ class LeadController {
       return res.status(400).json({ error: 'Telefone deve ter 10 ou 11 dígitos.' });
     }
 
-    try {
-      const initialNote = {
-        text: `Lead criado por ${req.user.name || 'Usuário'} via formulário (Origem: ${origin.trim()})`,
-        timestamp: Date.now(),
-        user: req.user.name || 'Sistema'
-      };
+    // 📝 Nota inicial
+    const initialNote = {
+      text: `Lead criado por ${req.user.name || 'Usuário'} via formulário (Origem: ${origin.trim()})`,
+      timestamp: Date.now(),
+      user: req.user.name || 'Sistema'
+    };
 
-      const leadData = {
-        name: name.trim(),
-        email: email?.trim() || null,
-        phone: cleanPhone,
-        document: document?.trim() || null,
-        address: address?.trim() || null,
-        lat: req.body.lat || null,
-        lng: req.body.lng || null,
-        google_maps_link: req.body.google_maps_link || null,
-        status: status || 'Novo',
-        origin: origin.trim(),
-        owner_id: finalOwnerId,
-        uc: uc?.trim() || null,
-        avg_consumption: avg_consumption ? parseFloat(avg_consumption) : null,
-        estimated_savings: estimated_savings ? parseFloat(estimated_savings) : null,
-        qsa: qsa?.trim() || null,
-        notes: JSON.stringify([initialNote])
-      };
+    // ============================================================
+    // 🔥 GEOCODIFICAÇÃO — SÓ FAZ SE O FRONT NÃO ENVIAR lat/lng
+    // ============================================================
+    let lat = req.body.lat || null;
+    let lng = req.body.lng || null;
+    let cidade = req.body.cidade || null;
+    let regiao = req.body.regiao || null;
+    let google_maps_link = req.body.google_maps_link || null;
 
-      const newLead = await Lead.create(leadData);
+    if ((!lat || !lng) && address) {
+      try {
+        const fetch = (await import("node-fetch")).default;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
 
-      res.status(201).json({
-        message: 'Lead criado com sucesso!',
-        lead: this.formatLeadResponse(newLead)
-      });
+        const geoResp = await fetch(url, {
+          headers: { "User-Agent": "economizasul-crm/1.0" }
+        });
 
-    } catch (error) {
-      console.error("Erro ao criar lead:", error);
-      if (error.code === '23505') {
-        return res.status(409).json({ error: 'Este e-mail ou documento já está em uso.' });
+        const data = await geoResp.json();
+
+        if (data && data.length > 0) {
+          lat = parseFloat(data[0].lat);
+          lng = parseFloat(data[0].lon);
+
+          cidade = data[0].address?.city || data[0].address?.town || data[0].address?.village || null;
+          regiao = data[0].address?.state || null;
+          google_maps_link = `https://www.google.com/maps?q=${lat},${lng}`;
+        }
+      } catch (e) {
+        console.error("❌ Erro ao geocodificar endereço:", e);
       }
-      res.status(500).json({ error: 'Erro interno do servidor.', details: error.message });
     }
+
+    // ============================================================
+    // 🔥 MONTA PAYLOAD FINAL PARA INSERÇÃO
+    // ============================================================
+    const leadData = {
+      name: name.trim(),
+      email: email?.trim() || null,
+      phone: cleanPhone,
+      document: document?.trim() || null,
+      address: address?.trim() || null,
+      status: status || "Novo",
+      origin: origin.trim(),
+      owner_id: finalOwnerId,
+      uc: uc?.trim() || null,
+      avg_consumption: avg_consumption ? parseFloat(avg_consumption) : null,
+      estimated_savings: estimated_savings ? parseFloat(estimated_savings) : null,
+      qsa: qsa?.trim() || null,
+      notes: JSON.stringify([initialNote]),
+
+      lat,
+      lng,
+      google_maps_link,
+      cidade,
+      regiao,
+
+      metadata: {},
+      reason_for_loss: null,
+      kw_sold: 0
+    };
+
+    const newLead = await Lead.insert(leadData);
+
+    res.status(201).json({
+      message: "Lead criado com sucesso!",
+      lead: this.formatLeadResponse(newLead),
+    });
+
+  } catch (error) {
+    console.error("Erro ao criar lead:", error);
+    res.status(500).json({ error: "Erro interno do servidor.", details: error.message });
   }
+}
 
   /** 🔹 Retorna lista de leads conforme permissão do usuário */
   async getLeads(req, res) {

@@ -121,6 +121,10 @@ const Lead = {
     const { rows } = await pool.query(query, [...values, id]);
 
     return rows[0] || null;
+  },
+    async delete(id) {
+    await pool.query('DELETE FROM leads WHERE id = $1', [id]);
+    return true;
   }
 };
 
