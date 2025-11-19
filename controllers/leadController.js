@@ -146,13 +146,13 @@ async createLead(req, res) {
 
       lat,
       lng,
-      google_maps_link,
       cidade,
-      regiao,
+      regiao,      
+      google_maps_link,
 
+      kw_sold: 0,
       metadata: {},
       reason_for_loss: null,
-      kw_sold: 0
     };
 
     const newLead = await Lead.insert(leadData);

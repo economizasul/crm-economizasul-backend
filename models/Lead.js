@@ -86,9 +86,11 @@ const Lead = {
   async insert(payload) {
     const fields = [
       'name','email','phone','document','address','status','origin','owner_id',
-      'uc','avg_consumption','estimated_savings','qsa','notes','lat','lng',
-      'kw_sold','metadata','reason_for_loss','cidade','regiao','google_maps_link'
+      'uc','avg_consumption','estimated_savings','qsa','notes',
+      'lat','lng','cidade','regiao','google_maps_link',
+      'kw_sold','metadata','reason_for_loss'
     ];
+
 
     const vals = fields.map(f => payload[f] === undefined ? null : payload[f]);
     const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
