@@ -1,6 +1,5 @@
 // models/Lead.js
-const pool = require('../db');
-
+const { pool } = require('../config/db');
 
 const Lead = {
   async createTable() {
@@ -29,13 +28,11 @@ const Lead = {
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         date_won TIMESTAMP WITHOUT TIME ZONE,
-
         cidade VARCHAR(255),
         regiao VARCHAR(255)
       );
     `);
   },
-
 
   async findById(id) {
     const { rows } = await pool.query(
@@ -88,10 +85,9 @@ const Lead = {
 
   async insert(payload) {
     const fields = [
-       'name','email','phone','document','address','status','origin','owner_id',
-       'uc','avg_consumption','estimated_savings','qsa','notes','lat','lng',
-       'kw_sold','metadata','reason_for_loss',
-       'cidade', 'regiao', 'google_maps_link'
+      'name','email','phone','document','address','status','origin','owner_id',
+      'uc','avg_consumption','estimated_savings','qsa','notes','lat','lng',
+      'kw_sold','metadata','reason_for_loss','cidade','regiao','google_maps_link'
     ];
 
     const vals = fields.map(f => payload[f] === undefined ? null : payload[f]);
