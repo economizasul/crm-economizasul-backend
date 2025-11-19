@@ -4,39 +4,38 @@ const pool = require('../db');
 
 const Lead = {
   async createTable() {
-  await pool.query(`
-    CREATE TABLE IF NOT EXISTS leads (
-      id SERIAL PRIMARY KEY,
-      name VARCHAR(255) NOT NULL,
-      email VARCHAR(255),
-      phone VARCHAR(50),
-      document VARCHAR(50),
-      address TEXT,
-      status VARCHAR(100) DEFAULT 'Novo',
-      origin VARCHAR(100),
-      owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
-      uc VARCHAR(255),
-      avg_consumption DOUBLE PRECISION,
-      estimated_savings DOUBLE PRECISION,
-      qsa TEXT,
-      notes TEXT,
-      lat NUMERIC,
-      lng NUMERIC,
-      google_maps_link,
-      kw_sold DOUBLE PRECISION DEFAULT 0,
-      metadata JSONB DEFAULT '{}'::jsonb,
-      reason_for_loss VARCHAR(255),
-      created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-      date_won TIMESTAMP WITHOUT TIME ZONE,
+    await pool.query(`
+      CREATE TABLE IF NOT EXISTS leads (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255) NOT NULL,
+        email VARCHAR(255),
+        phone VARCHAR(50),
+        document VARCHAR(50),
+        address TEXT,
+        status VARCHAR(100) DEFAULT 'Novo',
+        origin VARCHAR(100),
+        owner_id INTEGER REFERENCES users(id) ON DELETE SET NULL,
+        uc VARCHAR(255),
+        avg_consumption DOUBLE PRECISION,
+        estimated_savings DOUBLE PRECISION,
+        qsa TEXT,
+        notes TEXT,
+        lat DOUBLE PRECISION,
+        lng DOUBLE PRECISION,
+        google_maps_link TEXT,
+        kw_sold DOUBLE PRECISION DEFAULT 0,
+        metadata JSONB DEFAULT '{}'::jsonb,
+        reason_for_loss VARCHAR(255),
+        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
+        date_won TIMESTAMP WITHOUT TIME ZONE,
 
-      -- 🔴 CORREÇÕES REQUERIDAS
-      cidade VARCHAR(255),
-      regiao VARCHAR(255),
-      google_maps_link TEXT
-    );
-  `);
-},
+        cidade VARCHAR(255),
+        regiao VARCHAR(255)
+      );
+    `);
+  },
+
 
   async findById(id) {
     const { rows } = await pool.query(
