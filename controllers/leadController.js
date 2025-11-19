@@ -94,13 +94,15 @@ async createLead(req, res) {
     // ============================================================
     // 🔥 GEOCODIFICAÇÃO — SÓ FAZ SE O FRONT NÃO ENVIAR lat/lng
     // ============================================================
-    let lat = req.body.lat || null;
-    let lng = req.body.lng || null;
+    let lat = req.body.lat ? parseFloat(req.body.lat) : null;
+    let lng = req.body.lng ? parseFloat(req.body.lng) : null;
+
     let cidade = req.body.cidade || null;
     let regiao = req.body.regiao || null;
     let google_maps_link = req.body.google_maps_link || null;
 
-    if ((!lat || !lng) && address) {
+    // Se lat/lng vierem vazios, null, "", undefined ou NaN → geocodifica
+    if ((!lat || !lng || isNaN(lat) || isNaN(lng)) && address) {
       try {
         const fetch = (await import("node-fetch")).default;
         const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
