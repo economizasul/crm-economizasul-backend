@@ -119,8 +119,9 @@ class ReportController {
         SELECT 
           l.cidade,
           l.google_maps_link,
-          l.regiao
-          l.vendedor_id, u.name as vendedor_name
+          l.regiao,
+          l.vendedor_id, 
+          u.name as vendedor_name
         FROM leads l
         LEFT JOIN users u ON l.vendedor_id = u.id
         WHERE l.status = 'Ganho'
