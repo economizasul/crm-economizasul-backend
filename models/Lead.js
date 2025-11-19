@@ -22,6 +22,7 @@ const Lead = {
       notes TEXT,
       lat NUMERIC,
       lng NUMERIC,
+      google_maps_link,
       kw_sold DOUBLE PRECISION DEFAULT 0,
       metadata JSONB DEFAULT '{}'::jsonb,
       reason_for_loss VARCHAR(255),

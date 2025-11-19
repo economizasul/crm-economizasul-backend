@@ -85,6 +85,9 @@ class LeadController {
         phone: cleanPhone,
         document: document?.trim() || null,
         address: address?.trim() || null,
+        lat: req.body.lat || null,
+        lng: req.body.lng || null,
+        google_maps_link: req.body.google_maps_link || null,
         status: status || 'Novo',
         origin: origin.trim(),
         owner_id: finalOwnerId,
@@ -181,6 +184,11 @@ class LeadController {
           : existingLead.estimated_savings,
         qsa: qsa?.trim() || existingLead.qsa,
       };
+
+      // 🔹 Adiciona lat/lng e link do Google Maps
+      if (req.body.lat !== undefined) updates.lat = req.body.lat;
+      if (req.body.lng !== undefined) updates.lng = req.body.lng;
+      if (req.body.google_maps_link !== undefined) updates.google_maps_link = req.body.google_maps_link;
 
       // ✅ Admin pode transferir titularidade
       if (isAdmin && owner_id !== undefined) {
