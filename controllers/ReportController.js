@@ -106,75 +106,79 @@ class ReportController {
 
   // NOVO ENDPOINT PARA O MAPA INTERATIVO
   static async getLeadsGanhoParaMapa(req, res) {
-    try {
-      let filters = req.body.filters || {};
-      if (typeof filters === 'string') {
-        try { filters = JSON.parse(filters); } catch (e) { filters = {}; }
-      }
-
-      const userId = req.user?.id;
-      const isAdmin = req.user?.role === 'Admin';
-
-      let query = `
-          SELECT 
-              l.id,
-              l.name,
-              l.cidade,
-              l.regiao,
-              l.google_maps_link,
-              l.lat,
-              l.lng,
-              l.created_at,
-              l.updated_at,
-              l.seller_id,
-              u.name as seller_name
-          FROM leads l
-          LEFT JOIN users u ON u.id = l.seller_id
-          WHERE l.status = 'Ganho'
-          AND l.deleted_at IS NULL
-          AND l.google_maps_link IS NOT NULL
-          AND l.google_maps_link != ''
-      `;
-
-      const conditions = [];
-      const values = [];
-
-      if (filters.startDate && filters.endDate) {
-        conditions.push(`l.data_ganho BETWEEN $${values.length + 1} AND $${values.length + 2}`);
-        values.push(filters.startDate, filters.endDate);
-      }
-
-      if (filters.vendedor && filters.vendedor !== 'todos') {
-        conditions.push(`l.vendedor_id = $${values.length + 1}`);
-        values.push(filters.vendedor);
-      }
-
-      if (!isAdmin) {
-        conditions.push(`l.vendedor_id = $${values.length + 1}`);
-        values.push(userId);
-      }
-
-      if (conditions.length > 0) {
-        query += ' AND ' + conditions.join(' AND ');
-      }
-
-      query += ' ORDER BY l.data_ganho DESC';
-
-      const result = await pool.query(query, values);
-
-      return res.status(200).json({
-        success: true,
-        data: result.rows || []
-      });
-
-    } catch (error) {
-      console.error('Erro no endpoint /leads-ganho-mapa:', error);
-      return res.status(500).json({
-        success: false,
-        message: 'Erro ao carregar dados do mapa.'
-      });
+  try {
+    let filters = req.body.filters || {};
+    if (typeof filters === 'string') {
+      try { filters = JSON.parse(filters); } catch (e) { filters = {}; }
     }
+
+    const userId = req.user?.id;
+    const isAdmin = req.user?.role === 'Admin';
+
+    // 🔧 BASE SQL
+    let query = `
+      SELECT 
+        l.id,
+        l.name,
+        l.cidade,
+        l.regiao,
+        l.google_maps_link,
+        l.lat,
+        l.lng,
+        l.created_at,
+        l.updated_at,
+        l.seller_id,
+        u.name as seller_name
+      FROM leads l
+      LEFT JOIN users u ON u.id = l.seller_id
+      WHERE l.status = 'Ganho'
+      AND l.deleted_at IS NULL
+      AND l.google_maps_link IS NOT NULL
+      AND l.google_maps_link <> ''
+    `;
+
+    const conditions = [];
+    const values = [];
+
+    // 📌 FILTRO DE DATA CORRETO (USA date_won)
+    if (filters.startDate && filters.endDate) {
+      conditions.push(`l.date_won BETWEEN $${values.length + 1} AND $${values.length + 2}`);
+      values.push(filters.startDate, filters.endDate);
+    }
+
+    // 📌 FILTRO DE VENDEDOR
+    if (filters.vendedor && filters.vendedor !== 'todos') {
+      conditions.push(`l.seller_id = $${values.length + 1}`);
+      values.push(filters.vendedor);
+    }
+
+    // 📌 RESTRIÇÃO PARA NÃO ADMIN
+    if (!isAdmin) {
+      conditions.push(`l.seller_id = $${values.length + 1}`);
+      values.push(userId);
+    }
+
+    if (conditions.length > 0) {
+      query += ' AND ' + conditions.join(' AND ');
+    }
+
+    query += ' ORDER BY l.date_won DESC';
+
+    const result = await pool.query(query, values);
+
+    return res.status(200).json({
+      success: true,
+      data: result.rows || []
+    });
+
+  } catch (error) {
+    console.error('Erro no endpoint /leads-ganho-mapa:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Erro ao carregar dados do mapa.'
+    });
   }
+}
 }
 
 module.exports = ReportController;
