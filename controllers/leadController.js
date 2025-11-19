@@ -103,7 +103,7 @@ async createLead(req, res) {
     if ((!lat || !lng) && address) {
       try {
         const fetch = (await import("node-fetch")).default;
-        const url = `https://nominatim.openstreetmap.org/search?format=json&limit=1&q=${encodeURIComponent(address)}`;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
 
         const geoResp = await fetch(url, {
           headers: { "User-Agent": "economizasul-crm/1.0" }
