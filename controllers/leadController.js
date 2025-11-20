@@ -91,7 +91,7 @@ async createLead(req, res) {
     };
 
     // ============================================================
-    // 🔥 GEOCODIFICAÇÃO — SÓ FAZ SE O FRONT NÃO ENVIAR lat/lng
+    // GEOCODIFICAÇÃO — SÓ FAZ SE O FRONT NÃO ENVIAR lat/lng
     // ============================================================
     let lat = req.body.lat ? parseFloat(req.body.lat) : null;
     let lng = req.body.lng ? parseFloat(req.body.lng) : null;
@@ -128,7 +128,7 @@ async createLead(req, res) {
 }
 
     // ============================================================
-    // 🔥 MONTA PAYLOAD FINAL PARA INSERÇÃO
+    // MONTA PAYLOAD FINAL PARA INSERÇÃO
     // ============================================================
     const leadData = {
       name: name.trim(),
