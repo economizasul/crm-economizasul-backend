@@ -101,43 +101,31 @@ async createLead(req, res) {
     let google_maps_link = req.body.google_maps_link || null;
 
     // Se lat/lng vierem vazios, null, "", undefined ou NaN → geocodifica
-    if ((!lat || !lng || isNaN(lat) || isNaN(lng)) && address) {
-      try {
-        const fetch = (await import("node-fetch")).default;
-        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    if ((!lat || !lng || isNaN(lat) || isNaN(lng)) || !cidade || !regiao) {
+  try {
+    const fetch = (await import("node-fetch")).default;
+    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+    const geoResp = await fetch(url, {
+      headers: { "User-Agent": "economizasul-crm/1.0" }
+    });
 
-        const geoResp = await fetch(url, {
-          headers: { "User-Agent": "economizasul-crm/1.0" }
-        });
+    const data = await geoResp.json();
 
-        const data = await geoResp.json();
+    if (data && data.length > 0) {
+      lat = lat || parseFloat(data[0].lat);
+      lng = lng || parseFloat(data[0].lon);
 
-        if (data && data.length > 0) {
-          lat = parseFloat(data[0].lat);
-          lng = parseFloat(data[0].lon);
+      const addr = data[0].address || {};
 
-          const addr = data[0].address || {};
+      cidade = cidade || addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
+      regiao = regiao || addr.state || addr.region || addr.state_district || null;
 
-          cidade =
-            addr.city ||
-            addr.town ||
-            addr.village ||
-            addr.municipality ||
-            addr.county || // <-- novidade
-            null;
-
-          regiao =
-            addr.state ||
-            addr.region ||
-            addr.state_district || // <-- novidade
-            null;
-
-          google_maps_link = `https://www.google.com/maps?q=${lat},${lng}`;
-        }
-      } catch (e) {
-        console.error("❌ Erro ao geocodificar endereço:", e);
-      }
+      google_maps_link = google_maps_link || `https://www.google.com/maps?q=${lat},${lng}`;
     }
+  } catch (e) {
+    console.error("❌ Erro ao geocodificar endereço:", e);
+  }
+}
 
     // ============================================================
     // 🔥 MONTA PAYLOAD FINAL PARA INSERÇÃO
