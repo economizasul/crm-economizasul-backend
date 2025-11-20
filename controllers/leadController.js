@@ -102,7 +102,7 @@ async createLead(req, res) {
 
     // Se lat/lng vierem vazios, null, "", undefined ou NaN → geocodifica
     if ((!lat || !lng || isNaN(lat) || isNaN(lng)) || !cidade || !regiao) {
-  try {
+    try {
     const fetch = (await import("node-fetch")).default;
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
     const geoResp = await fetch(url, {
