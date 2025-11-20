@@ -2,6 +2,7 @@
 const { pool } = require('../config/db');
 
 const Lead = {
+
   async createTable() {
     await pool.query(`
       CREATE TABLE IF NOT EXISTS leads (
@@ -19,17 +20,19 @@ const Lead = {
         estimated_savings DOUBLE PRECISION,
         qsa TEXT,
         notes TEXT,
-        lat DOUBLE PRECISION,
-        lng DOUBLE PRECISION,
+        lat NUMERIC,
+        lng NUMERIC,
+        cidade VARCHAR(255),
+        regiao VARCHAR(255),
         google_maps_link TEXT,
         kw_sold DOUBLE PRECISION DEFAULT 0,
         metadata JSONB DEFAULT '{}'::jsonb,
         reason_for_loss VARCHAR(255),
-        created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
-        date_won TIMESTAMP WITHOUT TIME ZONE,
-        cidade VARCHAR(255),
-        regiao VARCHAR(255)
+        seller_id VARCHAR(255),
+        seller_name VARCHAR(255),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        date_won TIMESTAMP
       );
     `);
   },
@@ -37,44 +40,42 @@ const Lead = {
   async findById(id) {
     const { rows } = await pool.query(
       `SELECT l.*, u.name AS owner_name 
-       FROM leads l 
-       LEFT JOIN users u ON u.id = l.owner_id 
-       WHERE l.id = $1 
-       LIMIT 1`,
+       FROM leads l
+       LEFT JOIN users u ON u.id = l.owner_id
+       WHERE l.id = $1 LIMIT 1`,
       [id]
     );
     return rows[0] || null;
   },
 
-  async findAll({ status, ownerId, search, userRole }) {
+  async findAll(params) {
     let query = `
       SELECT l.*, u.name AS owner_name
       FROM leads l
       LEFT JOIN users u ON u.id = l.owner_id
-      WHERE 1=1
+      WHERE 1 = 1
     `;
+
     const values = [];
     let idx = 1;
 
-    if (status) {
+    if (params.status) {
       query += ` AND l.status = $${idx++}`;
-      values.push(status);
+      values.push(params.status);
     }
 
-    if (search) {
+    if (params.search) {
       query += ` AND (l.name ILIKE $${idx} OR l.phone ILIKE $${idx} OR l.email ILIKE $${idx})`;
-      values.push(`%${search}%`);
+      values.push(`%${params.search}%`);
       idx++;
     }
 
-    if (userRole !== 'Admin') {
-      if (ownerId) {
-        query += ` AND l.owner_id = $${idx++}`;
-        values.push(ownerId);
-      }
-    } else if (ownerId) {
+    if (params.userRole !== 'Admin') {
       query += ` AND l.owner_id = $${idx++}`;
-      values.push(ownerId);
+      values.push(params.ownerId);
+    } else if (params.ownerId) {
+      query += ` AND l.owner_id = $${idx++}`;
+      values.push(params.ownerId);
     }
 
     query += ` ORDER BY l.created_at DESC`;
@@ -88,27 +89,25 @@ const Lead = {
       'name','email','phone','document','address','status','origin','owner_id',
       'uc','avg_consumption','estimated_savings','qsa','notes',
       'lat','lng','cidade','regiao','google_maps_link',
-      'kw_sold','metadata','reason_for_loss'
+      'kw_sold','metadata','reason_for_loss','seller_id','seller_name'
     ];
 
-
-    const vals = fields.map(f => payload[f] === undefined ? null : payload[f]);
+    const vals = fields.map(f => payload[f] ?? null);
     const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
 
-    const q = `
-      INSERT INTO leads (${fields.join(',')}) 
-      VALUES (${placeholders}) 
-      RETURNING *
+    const query = `
+      INSERT INTO leads (${fields.join(',')})
+      VALUES (${placeholders})
+      RETURNING *;
     `;
-    const { rows } = await pool.query(q, vals);
+
+    const { rows } = await pool.query(query, vals);
     return rows[0];
   },
 
-  // 🔥 ADICIONE O MÉTODO update() AQUI
   async update(id, payload) {
     const fields = Object.keys(payload);
-
-    if (fields.length === 0) return null;
+    if (!fields.length) return null;
 
     const setExpressions = fields.map((key, i) => `${key} = $${i + 1}`);
     const values = Object.values(payload);
@@ -121,10 +120,10 @@ const Lead = {
     `;
 
     const { rows } = await pool.query(query, [...values, id]);
-
     return rows[0] || null;
   },
-    async delete(id) {
+
+  async delete(id) {
     await pool.query('DELETE FROM leads WHERE id = $1', [id]);
     return true;
   }
