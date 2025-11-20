@@ -14,7 +14,6 @@ class LeadController {
   }
 
   /** 🔹 Formata o objeto Lead de forma segura */
-  /** 🔹 Formata o objeto Lead de forma segura */
 formatLeadResponse(lead) {
   let notesArray = [];
 
@@ -117,8 +116,22 @@ async createLead(req, res) {
           lat = parseFloat(data[0].lat);
           lng = parseFloat(data[0].lon);
 
-          cidade = data[0].address?.city || data[0].address?.town || data[0].address?.village || null;
-          regiao = data[0].address?.state || null;
+          const addr = data[0].address || {};
+
+          cidade =
+            addr.city ||
+            addr.town ||
+            addr.village ||
+            addr.municipality ||
+            addr.county || // <-- novidade
+            null;
+
+          regiao =
+            addr.state ||
+            addr.region ||
+            addr.state_district || // <-- novidade
+            null;
+
           google_maps_link = `https://www.google.com/maps?q=${lat},${lng}`;
         }
       } catch (e) {
