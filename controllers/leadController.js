@@ -73,7 +73,7 @@ async createLead(req, res) {
 
     const finalOwnerId = bodyOwnerId || req.user.id;
 
-    // 🛑 Validações básicas
+    // Validações básicas
     if (!name?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
     if (!phone?.replace(/\D/g, '')?.trim()) return res.status(400).json({ error: 'Telefone é obrigatório.' });
     if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });
