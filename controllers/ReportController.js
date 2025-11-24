@@ -129,7 +129,7 @@ class ReportController {
           l.seller_id,
           u.name as seller_name
         FROM leads l
-        LEFT JOIN users u ON u.id = l.seller_id::integer
+        LEFT JOIN users u ON u.id = l.owner_id
         WHERE l.status = 'Ganho'
           AND l.google_maps_link IS NOT NULL 
           AND l.google_maps_link <> ''
@@ -151,9 +151,9 @@ class ReportController {
       }
 
       // Restrição para usuário comum (só vê os próprios leads)
-      if (!isAdmin && userId) {
-        conditions.push(`l.seller_id = $${values.length + 1}::text`);
-        values.push(userId.toString());
+      if (!isAdmin) {
+        conditions.push(`l.owner_id = $${values.length + 1}`);
+        values.push(userId);
       }
 
       if (conditions.length > 0) {
