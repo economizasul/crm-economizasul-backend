@@ -20,19 +20,19 @@ async function checkAndAddRoleColumn() {
             
             await pool.query(`
                 ALTER TABLE users 
-                ADD COLUMN role VARCHAR(50) DEFAULT 'User';
+                ADD COLUMN role VARCHAR(50) DEFAULT 'user';
             `);
             
-            console.log("Coluna 'role' adicionada com sucesso. Definindo usuário 1 como 'Admin'...");
+            console.log("Coluna 'role' adicionada com sucesso. Definindo usuário 1 como 'admin'...");
 
             // 3. Define o primeiro usuário (seu Admin) como 'admin' por padrão
             await pool.query(`
                 UPDATE users
-                SET role = 'Admin'
+                SET role = 'admin'
                 WHERE id = 1;
             `);
             
-            console.log("Usuário de ID 1 definido como 'Admin'. Colunas migradas.");
+            console.log("Usuário de ID 1 definido como 'admin'. Colunas migradas.");
         } else {
             console.log("Coluna 'role' já existe. Migração não necessária.");
         }
