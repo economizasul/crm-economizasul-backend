@@ -46,17 +46,17 @@ async function getSummaryAndProductivity(whereClause, values) {
       COALESCE(COUNT(*), 0) AS total_leads,
 
       -- ✔ LEADS GANHOS (status = 'Ganho')
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'Ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
 
       -- ✔ KW vendido (usa avg_consumption direto pois é numérico)
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'Ganho' THEN avg_consumption ELSE 0 END), 0) AS total_won_value_kw,
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN avg_consumption ELSE 0 END), 0) AS total_won_value_kw,
 
       -- ✔ PERDIDOS
       COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
 
       -- ✔ Taxa de conversão
       COALESCE(
-        (SUM(CASE WHEN LOWER(status) = 'Ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0),
+        (SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0),
         0
       ) AS conversion_rate_percent,
 
@@ -64,7 +64,7 @@ async function getSummaryAndProductivity(whereClause, values) {
       COALESCE(
         AVG(
           CASE 
-            WHEN LOWER(status) = 'Ganho' AND date_won IS NOT NULL 
+            WHEN LOWER(status) = 'ganho' AND date_won IS NOT NULL 
             THEN EXTRACT(EPOCH FROM (date_won - created_at)) / 86400
             ELSE NULL
           END
@@ -236,7 +236,7 @@ async function getMapLocations(filters, userId, isAdmin) {
         lat,
         lng
       FROM leads
-      ${whereClause} AND LOWER(status) = 'Ganho'
+      ${whereClause} AND LOWER(status) = 'ganho'
     ) AS sub
     WHERE city IS NOT NULL AND city <> ''
     GROUP BY city
