@@ -31,9 +31,31 @@ class ReportController {
 
   static async getReportData(req, res) {
     try {
-      let filters = req.body.filters || req.query.filters || {};
-      if (typeof filters === 'string') {
-        try { filters = JSON.parse(filters); } catch (e) { filters = {}; }
+      // Aceita formatos:
+      //  - { filters: { ... } }
+      //  - { startDate: '...', endDate: '...', ... } (body direto)
+      //  - query.filters
+      let filters = {};
+      if (req.body) {
+        // prefer explicit req.body.filters
+        if (req.body.filters && typeof req.body.filters === 'object') {
+          filters = req.body.filters;
+        } else {
+          // se o body parece ser o próprio objeto de filtros (tem campos esperados), use-o
+          const bodyKeys = Object.keys(req.body || {});
+          const likelyFilterKeys = ['startDate', 'endDate', 'vendedor', 'ownerId', 'source', 'start_date', 'end_date'];
+          const hasFilterKey = bodyKeys.some(k => likelyFilterKeys.includes(k));
+          filters = hasFilterKey ? req.body : (req.body.filters || {});
+        }
+      }
+
+      // fallback para query.filters (string/json)
+      if ((!filters || Object.keys(filters).length === 0) && req.query && req.query.filters) {
+        try {
+          filters = typeof req.query.filters === 'string' ? JSON.parse(req.query.filters) : req.query.filters;
+        } catch (e) {
+          filters = {};
+        }
       }
 
       const userId = req.user?.id || null;
@@ -42,7 +64,7 @@ class ReportController {
       const data = await ReportDataService.getAllDashboardData(filters, userId, isAdmin);
       return res.status(200).json({ success: true, data });
     } catch (error) {
-      console.error('ERRO INTERNO: ReportController.getReportData falhou:', error.message);
+      console.error('ERRO INTERNO: ReportController.getReportData falhou:', error.message || error);
       return res.status(500).json({
         success: false,
         message: 'Falha ao carregar dados do relatório.'
@@ -96,7 +118,7 @@ class ReportController {
       res.setHeader('Content-Disposition', `attachment; filename=relatorio_completo_${new Date().toISOString().slice(0, 10)}.pdf`);
       return res.status(200).send(pdfBuffer);
     } catch (error) {
-      console.error('Erro ao exportar PDF (ReportController):', error.message);
+      console.error('Erro ao exportar PDF (ReportController):', error.message || error);
       return res.status(500).json({
         success: false,
         message: 'Falha crítica ao gerar PDF.'
