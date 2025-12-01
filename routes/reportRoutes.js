@@ -3,8 +3,8 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 const ReportController = require('../controllers/ReportController');
-const authMiddleware = require('../middleware/authMiddleware');
 
+// Aplica proteção global a todas as rotas
 router.use(protect);
 
 router.get('/sellers', ReportController.getVendors);
@@ -20,6 +20,7 @@ router.get('/notes/:leadId', ReportController.getAnalyticNotes);
 router.post('/export/csv', ReportController.exportCsv);
 router.post('/export/pdf', ReportController.exportPdf);
 
-router.post('/motivos-perda', authMiddleware, ReportController.getLossReasons);
+// CORREÇÃO: passar apenas a função protect
+router.post('/motivos-perda', protect, ReportController.getLossReasons);
 
 module.exports = router;
