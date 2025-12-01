@@ -40,6 +40,10 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
   return { whereClause: where, values };
 }
 
+/**
+ * getSummaryAndProductivity
+ * (mantive sua lógica original — apenas certifique-se que a query funcione com seu schema)
+ */
 async function getSummaryAndProductivity(whereClause, values) {
   const query = `
     SELECT
@@ -86,7 +90,7 @@ async function getSummaryAndProductivity(whereClause, values) {
 
     const leadRes = await pool.query(leadQuery, values);
     const leads = leadRes.rows || [];
-    const ganhos = leads.filter(l => l.status?.toLowerCase() === 'Ganho');
+    const ganhos = leads.filter(l => String(l.status || '').toLowerCase() === 'ganho');
 
     let tempoMedioFechamentoHoras = 0;
 
@@ -100,7 +104,10 @@ async function getSummaryAndProductivity(whereClause, values) {
     }
 
     const ativos = leads.filter(
-      l => l.status?.toLowerCase() !== 'Ganho' && l.status?.toLowerCase() !== 'perdido'
+      l => {
+        const s = String(l.status || '').toLowerCase();
+        return s !== 'ganho' && s !== 'perdido';
+      }
     );
 
     let tempoMedioAtendimentoHoras = 0;
@@ -124,7 +131,7 @@ async function getSummaryAndProductivity(whereClause, values) {
 
       tempoMedioFechamentoHoras,
       tempoMedioAtendimentoHoras
-};
+    };
 
   } catch (err) {
     console.error('SQL ERROR getSummaryAndProductivity:', err.message);
@@ -135,9 +142,9 @@ async function getSummaryAndProductivity(whereClause, values) {
 }
 
 /**
- * getFunnelData
+ * getStageFunnel — funnel por STATUS (Contatos, Conversando, Ganho, Inapto, etc.)
  */
-async function getFunnelData(filters, userId, isAdmin) {
+async function getStageFunnel(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
   const q = `
     SELECT status AS stage_name, COUNT(*)::int AS count
@@ -150,7 +157,36 @@ async function getFunnelData(filters, userId, isAdmin) {
     const r = await pool.query(q, values);
     return r.rows.map(rw => ({ stageName: rw.stage_name, count: Number(rw.count || 0) }));
   } catch (err) {
-    console.error('SQL ERROR getFunnelData:', err.message);
+    console.error('SQL ERROR getStageFunnel:', err.message);
+    throw err;
+  }
+}
+
+/**
+ * getOriginFunnel — funnel por ORIGIN (Orgânico, Indicação, Facebook, ...)
+ * Retorna tanto array quanto objeto (originStats) para facilitar o frontend.
+ */
+async function getOriginFunnel(filters, userId, isAdmin) {
+  const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
+  const q = `
+    SELECT 
+      COALESCE(NULLIF(TRIM(origin), ''), 'Não informado') AS origin_name, 
+      COUNT(*)::int AS count
+    FROM leads
+    ${whereClause}
+    GROUP BY origin_name
+    ORDER BY count DESC
+  `;
+
+  try {
+    const r = await pool.query(q, values);
+    const arr = r.rows.map(rw => ({ origin: rw.origin_name, count: Number(rw.count || 0) }));
+    const obj = {};
+    arr.forEach(it => { obj[it.origin] = it.count; });
+    return { arr, obj };
+  } catch (err) {
+    console.error('SQL ERROR getOriginFunnel:', err.message);
     throw err;
   }
 }
@@ -288,15 +324,18 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
   try {
     const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
+    // chamamos explicitamente as funções que precisam de filtros (passando filters para as que precisam)
     const [
       summary,
-      funnel,
+      stageFunnel,
+      originFunnelResult,
       lostReasons,
       dailyActivity,
       mapLocations
     ] = await Promise.all([
       getSummaryAndProductivity(whereClause, values),
-      getFunnelData(filters, userId, isAdmin),
+      getStageFunnel(filters, userId, isAdmin),            // funnel por STATUS
+      getOriginFunnel(filters, userId, isAdmin),           // funnel por ORIGIN -> {arr, obj}
       getLostReasonsData(filters, userId, isAdmin),
       getDailyActivity(filters, userId, isAdmin),
       getMapLocations(filters, userId, isAdmin)
@@ -305,7 +344,12 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
     return {
       globalSummary: summary,
       productivity: { ...summary },
-      funnel,
+      // funnel (por estágio/status) para onde o frontend já o utiliza (ex: procura 'Inapto')
+      funnel: stageFunnel || [],
+      // originStats: objeto { origem: quantidade }
+      originStats: originFunnelResult.obj || {},
+      // funnelOrigins: array [{ origin, count }] (opcional — dá flexibilidade)
+      funnelOrigins: originFunnelResult.arr || [],
       lostReasons,
       dailyActivity,
       mapLocations,
@@ -320,7 +364,8 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
 module.exports = {
   buildFilter,
   getSummaryAndProductivity,
-  getFunnelData,
+  getStageFunnel,
+  getOriginFunnel,
   getLostReasonsData,
   getDailyActivity,
   getLeadsForExport,

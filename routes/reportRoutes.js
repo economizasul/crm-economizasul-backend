@@ -19,4 +19,6 @@ router.get('/notes/:leadId', ReportController.getAnalyticNotes);
 router.post('/export/csv', ReportController.exportCsv);
 router.post('/export/pdf', ReportController.exportPdf);
 
+router.post('/motivos-perda', auth, ReportController.getLossReasons);
+
 module.exports = router;
