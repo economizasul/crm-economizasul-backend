@@ -3,6 +3,7 @@ const express = require('express');
 const router = express.Router();
 const { protect } = require('../middleware/authMiddleware');
 const ReportController = require('../controllers/ReportController');
+const authMiddleware = require('../middleware/authMiddleware');
 
 router.use(protect);
 
