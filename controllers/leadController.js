@@ -3,19 +3,19 @@ const { pool } = require('../config/db');
 const Lead = require('../models/Lead');
 
 class LeadController {
-  constructor() {
-    this.createLead = this.createLead.bind(this);
-    this.getLeads = this.getLeads.bind(this);
-    this.getLeadById = this.getLeadById.bind(this);
-    this.updateLead = this.updateLead.bind(this);
-    this.deleteLead = this.deleteLead.bind(this);
-    this.getUsersForReassignment = this.getUsersForReassignment.bind(this);
-    this.reassignLead = this.reassignLead.bind(this);
-  }
+ constructor() {
+   this.createLead = this.createLead.bind(this);
+   this.getLeads = this.getLeads.bind(this);
+   this.getLeadById = this.getLeadById.bind(this);
+   this.updateLead = this.updateLead.bind(this);
+   this.deleteLead = this.deleteLead.bind(this);
+   this.getUsersForReassignment = this.getUsersForReassignment.bind(this);
+   this.reassignLead = this.reassignLead.bind(this);
+ }
 
-  /** 🔹 Formata o objeto Lead de forma segura */
+   /** 🔹 Formata o objeto Lead de forma segura */
 formatLeadResponse(lead) {
-  let notesArray = [];
+   let notesArray = [];
 
   if (lead.notes) {
     try {
@@ -25,9 +25,9 @@ formatLeadResponse(lead) {
       }
     } catch (e) {
       notesArray = [{
-        text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
-        timestamp: Date.now(),
-        user: 'Sistema'
+       text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
+       timestamp: Date.now(),
+       user: 'Sistema'
       }];
     }
   }
@@ -48,15 +48,19 @@ formatLeadResponse(lead) {
     avgConsumption: lead.avg_consumption || null,
     estimatedSavings: lead.estimated_savings || null,
     qsa: lead.qsa || null,
-    notes: notesArray,
-
-    // 🟢 CAMPOS NOVOS
+    notes: notesArray,  
+    // 🟢 CAMPOS NOVOS (GEO)
     lat: lead.lat || null,
     lng: lead.lng || null,
     google_maps_link: lead.google_maps_link || null,
     cidade: lead.cidade || null,
-    regiao: lead.regiao || null,
-
+    regiao: lead.regiao || null,  
+    // 📊 CAMPOS NOVOS (VENDA/PERDA)
+    kwSold: lead.kw_sold || 0,
+    reasonForLoss: lead.reason_for_loss || null,
+    sellerId: lead.seller_id || null,
+    sellerName: lead.seller_name || null,
+    metadata: lead.metadata || {},  
     createdAt: lead.created_at,
     updatedAt: lead.updated_at,
   };
@@ -68,38 +72,34 @@ async createLead(req, res) {
   try {
     const {
       name, email, phone, document, address, status, origin,
-      uc, avg_consumption, estimated_savings, qsa, owner_id: bodyOwnerId
+      uc, avg_consumption, estimated_savings, qsa, owner_id: bodyOwnerId,
+      // 🟢 CAMPOS NOVOS
+      kw_sold, metadata, reason_for_loss, seller_id, seller_name,
     } = req.body;
 
-    const finalOwnerId = bodyOwnerId || req.user.id;
-
+    const finalOwnerId = bodyOwnerId || req.user.id;    
     // Validações básicas
     if (!name?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
     if (!phone?.replace(/\D/g, '')?.trim()) return res.status(400).json({ error: 'Telefone é obrigatório.' });
-    if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });
-
+    if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });   
     const cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.length < 10 || cleanPhone.length > 11) {
       return res.status(400).json({ error: 'Telefone deve ter 10 ou 11 dígitos.' });
-    }
-
+    }   
     // 📝 Nota inicial
     const initialNote = {
       text: `Lead criado por ${req.user.name || 'Usuário'} via formulário (Origem: ${origin.trim()})`,
       timestamp: Date.now(),
       user: req.user.name || 'Sistema'
-    };
-
+    };    
     // ============================================================
     // GEOCODIFICAÇÃO — SÓ FAZ SE O FRONT NÃO ENVIAR lat/lng
     // ============================================================
     let lat = req.body.lat ? parseFloat(req.body.lat) : null;
-    let lng = req.body.lng ? parseFloat(req.body.lng) : null;
-
+    let lng = req.body.lng ? parseFloat(req.body.lng) : null;   
     let cidade = req.body.cidade || null;
     let regiao = req.body.regiao || null;
-    let google_maps_link = req.body.google_maps_link || null;
-
+    let google_maps_link = req.body.google_maps_link || null;   
     // Se lat/lng vierem vazios, null, "", undefined ou NaN → geocodifica
     if ((!lat || !lng || isNaN(lat) || isNaN(lng)) || !cidade || !regiao) {
     try {
@@ -107,19 +107,14 @@ async createLead(req, res) {
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
     const geoResp = await fetch(url, {
       headers: { "User-Agent": "economizasul-crm/1.0" }
-    });
-
-    const data = await geoResp.json();
-
+    });   
+    const data = await geoResp.json();    
     if (data && data.length > 0) {
       lat = lat || parseFloat(data[0].lat);
-      lng = lng || parseFloat(data[0].lon);
-
-      const addr = data[0].address || {};
-
+      lng = lng || parseFloat(data[0].lon);   
+      const addr = data[0].address || {};   
       cidade = cidade || addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
-      regiao = regiao || addr.state || addr.region || addr.state_district || null;
-
+      regiao = regiao || addr.state || addr.region || addr.state_district || null;    
       google_maps_link = google_maps_link || `https://www.google.com/maps?q=${lat},${lng}`;
     }
   } catch (e) {
@@ -143,17 +138,18 @@ async createLead(req, res) {
       avg_consumption: avg_consumption ? parseFloat(avg_consumption) : null,
       estimated_savings: estimated_savings ? parseFloat(estimated_savings) : null,
       qsa: qsa?.trim() || null,
-      notes: JSON.stringify([initialNote]),
-
+      notes: JSON.stringify([initialNote]),     
       lat,
       lng,
       cidade,
-      regiao,      
-      google_maps_link,
-
-      kw_sold: 0,
-      metadata: {},
-      reason_for_loss: null,
+      regiao,      
+      google_maps_link,     
+      // 🟢 CAMPOS NOVOS: prioriza body, senão usa padrão
+      kw_sold: kw_sold ? parseFloat(kw_sold) : 0,
+      metadata: metadata || {},
+      reason_for_loss: reason_for_loss || null,
+      seller_id: seller_id || null,
+      seller_name: seller_name || null,
     };
 
     const newLead = await Lead.insert(leadData);
@@ -208,7 +204,9 @@ async createLead(req, res) {
     const { id } = req.params;
     const {
       name, email, phone, document, address, status, origin,
-      uc, avg_consumption, estimated_savings, qsa, newNote, owner_id
+      uc, avg_consumption, estimated_savings, qsa, newNote, owner_id,
+      // 🟢 CAMPOS NOVOS
+      kw_sold, metadata, reason_for_loss, seller_id, seller_name,
     } = req.body;
 
     try {
@@ -244,6 +242,13 @@ async createLead(req, res) {
       if (req.body.lat !== undefined) updates.lat = req.body.lat;
       if (req.body.lng !== undefined) updates.lng = req.body.lng;
       if (req.body.google_maps_link !== undefined) updates.google_maps_link = req.body.google_maps_link;
+       
+      // 🟢 Adiciona novos campos (Venda/Perda)
+      if (kw_sold !== undefined) updates.kw_sold = kw_sold ? parseFloat(kw_sold) : 0;
+      if (metadata !== undefined) updates.metadata = metadata;
+      if (reason_for_loss !== undefined) updates.reason_for_loss = reason_for_loss?.trim() || null;
+      if (seller_id !== undefined) updates.seller_id = seller_id || null;
+      if (seller_name !== undefined) updates.seller_name = seller_name?.trim() || null;
 
       // ✅ Admin pode transferir titularidade
       if (isAdmin && owner_id !== undefined) {
@@ -289,7 +294,7 @@ async createLead(req, res) {
     try {
       const lead = await Lead.findById(id);
       if (!lead) return res.status(404).json({ error: 'Lead não encontrado.' });
-
+      
       const isOwner = Number(lead.owner_id) === Number(req.user.id);
       if (!isOwner && req.user.role !== 'Admin') {
         return res.status(403).json({ error: 'Acesso negado.' });
