@@ -200,80 +200,80 @@ class ReportController {
     }
   }
 
-    // =====================================================
-  // NOVO ENDPOINT - MOTIVOS DE PERDA (DINÂMICO)
-  // =====================================================
-  static async getLossReasons(req, res) {
-    try {
-      let filters = req.body.filters || req.query.filters || {};
-      if (typeof filters === 'string') {
-        try { filters = JSON.parse(filters); } catch (e) { filters = {}; }
-      }
-
-      const userId = req.user?.id || null;
-      const isAdmin = req.user?.role === 'Admin' || false;
-
-      let query = `
-        SELECT 
-          reason_for_loss AS reason,
-          COUNT(*) AS total
-        FROM leads
-        WHERE status = 'Perdido'
-          AND reason_for_loss IS NOT NULL
-          AND reason_for_loss <> ''
-      `;
-
-      const conditions = [];
-      const values = [];
-
-      // filtro por data
-      if (filters.startDate && filters.endDate) {
-        conditions.push(`date_won BETWEEN $${values.length + 1} AND $${values.length + 2}`);
-        values.push(filters.startDate, filters.endDate);
-      }
-
-      // filtro por vendedor escolhido (admin)
-      if (filters.vendedor && filters.vendedor !== 'todos') {
-        conditions.push(`seller_id = $${values.length + 1}`);
-        values.push(filters.vendedor);
-      }
-
-      // usuário comum vê só seus leads
-      if (!isAdmin) {
-        conditions.push(`owner_id = $${values.length + 1}`);
-        values.push(userId);
-      }
-
-      if (conditions.length > 0) {
-        query += " AND " + conditions.join(" AND ");
-      }
-
-      query += " GROUP BY reason ORDER BY total DESC";
-
-      const result = await pool.query(query, values);
-
-      // calcular porcentagens
-      const totalLosses = result.rows.reduce((s, r) => s + Number(r.total), 0);
-
-      const formatted = result.rows.map(r => ({
-        reason: r.reason,
-        total: Number(r.total),
-        percent: totalLosses > 0 ? Number((r.total / totalLosses * 100).toFixed(1)) : 0
-      }));
-
-      return res.status(200).json({
-        success: true,
-        data: formatted
-      });
-
-    } catch (error) {
-      console.error("Erro ao buscar motivos de perda:", error);
-      return res.status(500).json({
-        success: false,
-        message: "Erro ao carregar motivos de perda."
-      });
+// =====================================================
+// NOVO ENDPOINT - MOTIVOS DE PERDA
+// =====================================================
+static async getLossReasons(req, res) {
+  try {
+    let filters = req.body.filters || req.query.filters || {};
+    if (typeof filters === 'string') {
+      try { filters = JSON.parse(filters); } catch (e) { filters = {}; }
     }
+
+    const userId = req.user?.id || null;
+    const isAdmin = req.user?.role === 'Admin' || false;
+
+    let query = `
+      SELECT 
+        reason_for_loss AS reason,
+        COUNT(*) AS total
+      FROM leads
+      WHERE status = 'Perdido'
+        AND reason_for_loss IS NOT NULL
+        AND reason_for_loss <> ''
+    `;
+
+    const conditions = [];
+    const values = [];
+
+    // filtro por data
+    if (filters.startDate && filters.endDate) {
+      conditions.push(`date_lost BETWEEN $${values.length + 1} AND $${values.length + 2}`);
+      values.push(filters.startDate, filters.endDate);
+    }
+
+    // filtro por vendedor (admin seleciona)
+    if (filters.vendedor && filters.vendedor !== 'todos') {
+      conditions.push(`seller_id = $${values.length + 1}`);
+      values.push(filters.vendedor);
+    }
+
+    // usuário comum vê somente seus leads
+    if (!isAdmin) {
+      conditions.push(`owner_id = $${values.length + 1}`);
+      values.push(userId);
+    }
+
+    if (conditions.length > 0) {
+      query += " AND " + conditions.join(" AND ");
+    }
+
+    query += " GROUP BY reason ORDER BY total DESC";
+
+    const result = await pool.query(query, values);
+
+    const total = result.rows.reduce((acc, r) => acc + Number(r.total), 0);
+
+    const formatted = result.rows.map(r => ({
+      reason: r.reason,
+      total: Number(r.total),
+      percent: total > 0 ? Number(((r.total / total) * 100).toFixed(1)) : 0
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data: formatted
+    });
+
+  } catch (error) {
+    console.error("Erro ao buscar motivos de perda:", error);
+    return res.status(500).json({
+      success: false,
+      message: "Erro ao carregar motivos de perda."
+    });
   }
+}
+
 
 }
 

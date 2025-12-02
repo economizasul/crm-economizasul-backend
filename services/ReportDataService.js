@@ -44,7 +44,8 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
  * getSummaryAndProductivity
  * (mantive sua lógica original — apenas certifique-se que a query funcione com seu schema)
  */
-async function getSummaryAndProductivity(whereClause, values) {
+async function getSummaryAndProductivity(filters, userId, isAdmin) {
+  const { whereClause, values } = buildFilter(filters, userId, isAdmin);
   const query = `
     SELECT
       COALESCE(COUNT(*), 0) AS total_leads,
@@ -150,12 +151,18 @@ async function getStageFunnel(filters, userId, isAdmin) {
     SELECT status AS stage_name, COUNT(*)::int AS count
     FROM leads
     ${whereClause}
+    AND LOWER(status) <> 'inapto'
     GROUP BY status
     ORDER BY count DESC
   `;
+
   try {
     const r = await pool.query(q, values);
-    return r.rows.map(rw => ({ stageName: rw.stage_name, count: Number(rw.count || 0) }));
+    return r.rows.map(rw => ({
+      stage: rw.stage_name,
+       _count: { id: Number(rw.count || 0) }
+    }));
+
   } catch (err) {
     console.error('SQL ERROR getStageFunnel:', err.message);
     throw err;
@@ -333,9 +340,9 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
       dailyActivity,
       mapLocations
     ] = await Promise.all([
-      getSummaryAndProductivity(whereClause, values),
-      getStageFunnel(filters, userId, isAdmin),            // funnel por STATUS
-      getOriginFunnel(filters, userId, isAdmin),           // funnel por ORIGIN -> {arr, obj}
+      getSummaryAndProductivity(filters, userId, isAdmin),
+      getStageFunnel(filters, userId, isAdmin),
+      getOriginFunnel(filters, userId, isAdmin),
       getLostReasonsData(filters, userId, isAdmin),
       getDailyActivity(filters, userId, isAdmin),
       getMapLocations(filters, userId, isAdmin)
@@ -361,6 +368,37 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
   }
 }
 
+/**
+ * getMotivosPerdaReport — relatório exclusivo para o gráfico
+ */
+async function getMotivosPerdaReport(filters = {}, userId = null, isAdmin = false) {
+  const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
+  const q = `
+    SELECT 
+      COALESCE(NULLIF(TRIM(reason_for_loss), ''), 'Não informado') AS reason,
+      COUNT(*)::int AS count
+    FROM leads
+    ${whereClause}
+    AND LOWER(status) = 'perdido'
+    GROUP BY reason
+    ORDER BY count DESC
+  `;
+
+  try {
+    const result = await pool.query(q, values);
+
+    return result.rows.map(r => ({
+      reason: r.reason,
+      count: Number(r.count || 0)
+    }));
+
+  } catch (err) {
+    console.error("SQL ERROR getMotivosPerdaReport:", err.message);
+    throw err;
+  }
+}
+
 module.exports = {
   buildFilter,
   getSummaryAndProductivity,
@@ -370,5 +408,6 @@ module.exports = {
   getDailyActivity,
   getLeadsForExport,
   getMapLocations,
-  getAllDashboardData
+  getAllDashboardData,
+  getMotivosPerdaReport
 };
