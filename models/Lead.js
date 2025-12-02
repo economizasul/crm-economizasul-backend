@@ -1,4 +1,4 @@
-// models/Lead.js
+// models/Lead.js - VERSÃO FINAL CORRIGIDA
 const { pool } = require('../config/db');
 
 const Lead = {
@@ -28,7 +28,7 @@ const Lead = {
         kw_sold DOUBLE PRECISION DEFAULT 0,
         metadata JSONB DEFAULT '{}'::jsonb,
         reason_for_loss VARCHAR(255),
-        seller_id VARCHAR(255),
+        seller_id INTEGER REFERENCES users(id) ON DELETE SET NULL, /* 🟢 CORRIGIDO */
         seller_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

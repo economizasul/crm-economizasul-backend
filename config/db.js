@@ -8,10 +8,10 @@ const pool = new Pool({
 });
 
 /**
- * ensureSchemaSafe
- * Cria esquema/tabelas necessárias SE NÃO EXISTIREM.
- * NÃO DROPA tabelas. Uso seguro em produção.
- */
+ * ensureSchemaSafe
+ * Cria esquema/tabelas necessárias SE NÃO EXISTIREM.
+ * NÃO DROPA tabelas. Uso seguro em produção.
+ */
 async function ensureSchemaSafe() {
   // Cria apenas se não existir (non-destructive)
   try {
@@ -31,7 +31,7 @@ async function ensureSchemaSafe() {
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
+    
     // clients (light)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS clients (
@@ -43,7 +43,7 @@ async function ensureSchemaSafe() {
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
       );
     `);
-
+    
     // leads (full set of fields used by reports)
     await pool.query(`
       CREATE TABLE IF NOT EXISTS leads (
@@ -63,14 +63,20 @@ async function ensureSchemaSafe() {
         notes TEXT,
         lat NUMERIC,
         lng NUMERIC,
+        cidade VARCHAR(255),         /* 🟢 ADICIONADO */
+        regiao VARCHAR(255),         /* 🟢 ADICIONADO */
+        google_maps_link TEXT,       /* 🟢 ADICIONADO */
+        kw_sold DOUBLE PRECISION DEFAULT 0, /* 🟢 ADICIONADO */
         metadata JSONB DEFAULT '{}'::jsonb,
         reason_for_loss VARCHAR(255),
+        seller_id INTEGER REFERENCES users(id) ON DELETE SET NULL, /* 🟢 ADICIONADO */
+        seller_name VARCHAR(255),     /* 🟢 ADICIONADO */
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         date_won TIMESTAMP WITHOUT TIME ZONE
       );
     `);
-
+    
     // Create minimal admin user if not exists (safe: won't override)
     const adminEmail = process.env.ADMIN_EMAIL || 'admin@economizasul.com';
     const adminCheck = await pool.query('SELECT id FROM users WHERE email = $1 LIMIT 1', [adminEmail]);

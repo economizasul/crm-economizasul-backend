@@ -3,19 +3,19 @@ const { pool } = require('../config/db');
 const Lead = require('../models/Lead');
 
 class LeadController {
- constructor() {
-   this.createLead = this.createLead.bind(this);
-   this.getLeads = this.getLeads.bind(this);
-   this.getLeadById = this.getLeadById.bind(this);
-   this.updateLead = this.updateLead.bind(this);
-   this.deleteLead = this.deleteLead.bind(this);
-   this.getUsersForReassignment = this.getUsersForReassignment.bind(this);
-   this.reassignLead = this.reassignLead.bind(this);
- }
+  constructor() {
+    this.createLead = this.createLead.bind(this);
+    this.getLeads = this.getLeads.bind(this);
+    this.getLeadById = this.getLeadById.bind(this);
+    this.updateLead = this.updateLead.bind(this);
+    this.deleteLead = this.deleteLead.bind(this);
+    this.getUsersForReassignment = this.getUsersForReassignment.bind(this);
+    this.reassignLead = this.reassignLead.bind(this);
+}
 
-   /** 🔹 Formata o objeto Lead de forma segura */
+    /** 🔹 Formata o objeto Lead de forma segura */
 formatLeadResponse(lead) {
-   let notesArray = [];
+    let notesArray = [];
 
   if (lead.notes) {
     try {
@@ -25,9 +25,9 @@ formatLeadResponse(lead) {
       }
     } catch (e) {
       notesArray = [{
-       text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
-       timestamp: Date.now(),
-       user: 'Sistema'
+        text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
+        timestamp: Date.now(),
+        user: 'Sistema'
       }];
     }
   }
@@ -48,19 +48,19 @@ formatLeadResponse(lead) {
     avgConsumption: lead.avg_consumption || null,
     estimatedSavings: lead.estimated_savings || null,
     qsa: lead.qsa || null,
-    notes: notesArray,  
+    notes: notesArray,  
     // 🟢 CAMPOS NOVOS (GEO)
     lat: lead.lat || null,
     lng: lead.lng || null,
     google_maps_link: lead.google_maps_link || null,
     cidade: lead.cidade || null,
-    regiao: lead.regiao || null,  
+    regiao: lead.regiao || null,
     // 📊 CAMPOS NOVOS (VENDA/PERDA)
     kwSold: lead.kw_sold || 0,
     reasonForLoss: lead.reason_for_loss || null,
     sellerId: lead.seller_id || null,
     sellerName: lead.seller_name || null,
-    metadata: lead.metadata || {},  
+    metadata: lead.metadata || {},
     createdAt: lead.created_at,
     updatedAt: lead.updated_at,
   };
@@ -77,29 +77,29 @@ async createLead(req, res) {
       kw_sold, metadata, reason_for_loss, seller_id, seller_name,
     } = req.body;
 
-    const finalOwnerId = bodyOwnerId || req.user.id;    
+    const finalOwnerId = bodyOwnerId || req.user.id;
     // Validações básicas
     if (!name?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
     if (!phone?.replace(/\D/g, '')?.trim()) return res.status(400).json({ error: 'Telefone é obrigatório.' });
-    if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });   
+    if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });  
     const cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.length < 10 || cleanPhone.length > 11) {
       return res.status(400).json({ error: 'Telefone deve ter 10 ou 11 dígitos.' });
-    }   
+    } 
     // 📝 Nota inicial
     const initialNote = {
       text: `Lead criado por ${req.user.name || 'Usuário'} via formulário (Origem: ${origin.trim()})`,
       timestamp: Date.now(),
       user: req.user.name || 'Sistema'
-    };    
+    };
     // ============================================================
     // GEOCODIFICAÇÃO — SÓ FAZ SE O FRONT NÃO ENVIAR lat/lng
     // ============================================================
     let lat = req.body.lat ? parseFloat(req.body.lat) : null;
-    let lng = req.body.lng ? parseFloat(req.body.lng) : null;   
+    let lng = req.body.lng ? parseFloat(req.body.lng) : null; 
     let cidade = req.body.cidade || null;
     let regiao = req.body.regiao || null;
-    let google_maps_link = req.body.google_maps_link || null;   
+    let google_maps_link = req.body.google_maps_link || null; 
     // Se lat/lng vierem vazios, null, "", undefined ou NaN → geocodifica
     if ((!lat || !lng || isNaN(lat) || isNaN(lng)) || !cidade || !regiao) {
     try {
@@ -107,15 +107,16 @@ async createLead(req, res) {
     const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
     const geoResp = await fetch(url, {
       headers: { "User-Agent": "economizasul-crm/1.0" }
-    });   
-    const data = await geoResp.json();    
+    });
+    const data = await geoResp.json();
     if (data && data.length > 0) {
       lat = lat || parseFloat(data[0].lat);
-      lng = lng || parseFloat(data[0].lon);   
-      const addr = data[0].address || {};   
+      lng = lng || parseFloat(data[0].lon); 
+      const addr = data[0].address || {};
       cidade = cidade || addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
-      regiao = regiao || addr.state || addr.region || addr.state_district || null;    
-      google_maps_link = google_maps_link || `https://www.google.com/maps?q=${lat},${lng}`;
+      regiao = regiao || addr.state || addr.region || addr.state_district || null;
+      // ⚠️ CORREÇÃO: Link correto para Google Maps
+      google_maps_link = `https://maps.google.com/?q=${lat},${lng}`; 
     }
   } catch (e) {
     console.error("❌ Erro ao geocodificar endereço:", e);
@@ -138,12 +139,12 @@ async createLead(req, res) {
       avg_consumption: avg_consumption ? parseFloat(avg_consumption) : null,
       estimated_savings: estimated_savings ? parseFloat(estimated_savings) : null,
       qsa: qsa?.trim() || null,
-      notes: JSON.stringify([initialNote]),     
+      notes: JSON.stringify([initialNote]), 
       lat,
       lng,
       cidade,
-      regiao,      
-      google_maps_link,     
+      regiao, 
+      google_maps_link, 
       // 🟢 CAMPOS NOVOS: prioriza body, senão usa padrão
       kw_sold: kw_sold ? parseFloat(kw_sold) : 0,
       metadata: metadata || {},
@@ -163,27 +164,27 @@ async createLead(req, res) {
     console.error("Erro ao criar lead:", error);
     res.status(500).json({ error: "Erro interno do servidor.", details: error.message });
   }
-}
+  }
 
   /** 🔹 Retorna lista de leads conforme permissão do usuário */
   async getLeads(req, res) {
-    const { status, ownerId, search } = req.query;
-    const userRole = req.user.role;
-    const currentUserId = req.user.id;
+  const { status, ownerId, search } = req.query;
+  const userRole = req.user.role;
+  const currentUserId = req.user.id;
 
-    try {
-      const leads = await Lead.findAll({
-        status,
-        ownerId: userRole === 'Admin' ? (ownerId || null) : currentUserId,
-        search,
-        userRole
-      });
+  try {
+    const leads = await Lead.findAll({
+      status,
+      ownerId: userRole === 'Admin' ? (ownerId || null) : currentUserId,
+      search,
+      userRole
+    });
 
-      res.status(200).json(leads.map(this.formatLeadResponse));
-    } catch (error) {
-      console.error("Erro ao buscar leads:", error);
-      res.status(500).json({ error: "Erro ao carregar leads." });
-    }
+    res.status(200).json(leads.map(this.formatLeadResponse));
+  } catch (error) {
+    console.error("Erro ao buscar leads:", error);
+    res.status(500).json({ error: "Erro ao carregar leads." });
+  }
   }
 
   /** 🔹 Retorna um lead específico */
@@ -238,11 +239,46 @@ async createLead(req, res) {
         qsa: qsa?.trim() || existingLead.qsa,
       };
 
-      // 🔹 Adiciona lat/lng e link do Google Maps
-      if (req.body.lat !== undefined) updates.lat = req.body.lat;
-      if (req.body.lng !== undefined) updates.lng = req.body.lng;
-      if (req.body.google_maps_link !== undefined) updates.google_maps_link = req.body.google_maps_link;
-       
+      // 🔹 Lógica de Geocodificação para atualização (🟢 CORRIGIDO/ADICIONADO)
+      let lat = req.body.lat !== undefined ? parseFloat(req.body.lat) : existingLead.lat;
+      let lng = req.body.lng !== undefined ? parseFloat(req.body.lng) : existingLead.lng;
+      let cidade = req.body.cidade || existingLead.cidade;
+      let regiao = req.body.regiao || existingLead.regiao;
+      let google_maps_link = req.body.google_maps_link || existingLead.google_maps_link;
+      
+      const addressUpdated = address?.trim() && address?.trim() !== existingLead.address;
+
+      // Se o endereço foi atualizado E o front não enviou a nova geolocalização, geocodifica
+      if (addressUpdated && updates.address && (!req.body.lat || !req.body.lng || isNaN(lat) || isNaN(lng))) {
+          try {
+              const fetch = (await import("node-fetch")).default;
+              const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(updates.address)}`;
+              const geoResp = await fetch(url, {
+                  headers: { "User-Agent": "economizasul-crm/1.0" }
+              });
+              const data = await geoResp.json();
+
+              if (data && data.length > 0) {
+                  lat = parseFloat(data[0].lat);
+                  lng = parseFloat(data[0].lon);
+                  const addr = data[0].address || {};
+                  cidade = addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
+                  regiao = addr.state || addr.region || addr.state_district || null;
+                  // ⚠️ CORREÇÃO: Link correto para Google Maps
+                  google_maps_link = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+              }
+          } catch (e) {
+              console.error("❌ Erro ao re-geocodificar endereço durante update:", e);
+          }
+      }
+
+      // Aplica os valores de GEO (se vieram do body ou da geocodificação)
+      updates.lat = lat;
+      updates.lng = lng;
+      updates.cidade = cidade;
+      updates.regiao = regiao;
+      updates.google_maps_link = google_maps_link;
+      
       // 🟢 Adiciona novos campos (Venda/Perda)
       if (kw_sold !== undefined) updates.kw_sold = kw_sold ? parseFloat(kw_sold) : 0;
       if (metadata !== undefined) updates.metadata = metadata;
@@ -252,7 +288,7 @@ async createLead(req, res) {
 
       // ✅ Admin pode transferir titularidade
       if (isAdmin && owner_id !== undefined) {
-        updates.owner_id = parseInt(owner_id, 10);
+        updates.owner_id = parseInt(owner_id, 10);
       }
 
       // 🟢 Adiciona nova nota (histórico)
@@ -290,22 +326,22 @@ async createLead(req, res) {
 
   /** 🔹 Exclusão de lead */
   async deleteLead(req, res) {
-    const { id } = req.params;
-    try {
-      const lead = await Lead.findById(id);
-      if (!lead) return res.status(404).json({ error: 'Lead não encontrado.' });
-      
-      const isOwner = Number(lead.owner_id) === Number(req.user.id);
-      if (!isOwner && req.user.role !== 'Admin') {
-        return res.status(403).json({ error: 'Acesso negado.' });
-      }
-
-      await Lead.delete(id);
-      res.json({ message: 'Lead excluído com sucesso.' });
-    } catch (error) {
-      console.error("Erro ao excluir lead:", error);
-      res.status(500).json({ error: 'Erro ao excluir lead.' });
+  const { id } = req.params;
+  try {
+    const lead = await Lead.findById(id);
+    if (!lead) return res.status(404).json({ error: 'Lead não encontrado.' });
+    
+    const isOwner = Number(lead.owner_id) === Number(req.user.id);
+    if (!isOwner && req.user.role !== 'Admin') {
+      return res.status(403).json({ error: 'Acesso negado.' });
     }
+
+    await Lead.delete(id);
+    res.json({ message: 'Lead excluído com sucesso.' });
+  } catch (error) {
+    console.error("Erro ao excluir lead:", error);
+    res.status(500).json({ error: 'Erro ao excluir lead.' });
+  }
   }
 
   /** 🔹 Lista de usuários para reatribuição (apenas admin) */
