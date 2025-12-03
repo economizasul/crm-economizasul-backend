@@ -2,16 +2,17 @@
 const { Pool } = require('pg');
 require('dotenv').config();
 
+// Certifique-se de que não há espaços invisíveis aqui
 const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
 });
 
 /**
- * ensureSchemaSafe
- * Cria esquema/tabelas necessárias SE NÃO EXISTIREM.
- * NÃO DROPA tabelas. Uso seguro em produção.
- */
+ * ensureSchemaSafe
+ * Cria esquema/tabelas necessárias SE NÃO EXISTIREM.
+ * NÃO DROPA tabelas. Uso seguro em produção.
+ */
 async function ensureSchemaSafe() {
   // Cria apenas se não existir (non-destructive)
   try {
@@ -51,6 +52,7 @@ async function ensureSchemaSafe() {
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255),
         phone VARCHAR(50),
+        phone2 VARCHAR(50),  /* 🟢 Adicionado phone2 (NOVO) */
         document VARCHAR(100),
         address TEXT,
         status VARCHAR(100) DEFAULT 'Novo',
@@ -63,14 +65,14 @@ async function ensureSchemaSafe() {
         notes TEXT,
         lat NUMERIC,
         lng NUMERIC,
-        cidade VARCHAR(255),         /* 🟢 ADICIONADO */
-        regiao VARCHAR(255),         /* 🟢 ADICIONADO */
-        google_maps_link TEXT,       /* 🟢 ADICIONADO */
+        cidade VARCHAR(255),         /* 🟢 ADICIONADO */
+        regiao VARCHAR(255),         /* 🟢 ADICIONADO */
+        google_maps_link TEXT,       /* 🟢 ADICIONADO */
         kw_sold DOUBLE PRECISION DEFAULT 0, /* 🟢 ADICIONADO */
         metadata JSONB DEFAULT '{}'::jsonb,
         reason_for_loss VARCHAR(255),
         seller_id INTEGER REFERENCES users(id) ON DELETE SET NULL, /* 🟢 ADICIONADO */
-        seller_name VARCHAR(255),     /* 🟢 ADICIONADO */
+        seller_name VARCHAR(255),    /* 🟢 ADICIONADO */
         created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP,
         date_won TIMESTAMP WITHOUT TIME ZONE
