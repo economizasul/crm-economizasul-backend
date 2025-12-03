@@ -1,4 +1,4 @@
-// models/Lead.js - VERSÃO FINAL CORRIGIDA
+// models/Lead.js
 const { pool } = require('../config/db');
 
 const Lead = {
@@ -10,7 +10,7 @@ const Lead = {
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255),
         phone VARCHAR(50),
-        phone2 VARCHAR(50),                
+        phone2 VARCHAR(50),  /* 🟢 Adicionado phone2 (Limpo) */
         document VARCHAR(50),
         address TEXT,
         status VARCHAR(100) DEFAULT 'Novo',
@@ -86,6 +86,7 @@ const Lead = {
   },
 
   async insert(payload) {
+    /* 🟢 Adicionado 'phone2' aos campos para INSERT */
     const fields = [
       'name','email','phone','phone2','document','address','status','origin','owner_id',
       'uc','avg_consumption','estimated_savings','qsa','notes',
