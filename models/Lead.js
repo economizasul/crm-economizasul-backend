@@ -10,6 +10,7 @@ const Lead = {
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255),
         phone VARCHAR(50),
+        phone2 VARCHAR(50),                
         document VARCHAR(50),
         address TEXT,
         status VARCHAR(100) DEFAULT 'Novo',
@@ -28,7 +29,7 @@ const Lead = {
         kw_sold DOUBLE PRECISION DEFAULT 0,
         metadata JSONB DEFAULT '{}'::jsonb,
         reason_for_loss VARCHAR(255),
-        seller_id INTEGER REFERENCES users(id) ON DELETE SET NULL, /* 🟢 CORRIGIDO */
+        seller_id VARCHAR(255),
         seller_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
@@ -86,7 +87,7 @@ const Lead = {
 
   async insert(payload) {
     const fields = [
-      'name','email','phone','document','address','status','origin','owner_id',
+      'name','email','phone','phone2','document','address','status','origin','owner_id',
       'uc','avg_consumption','estimated_savings','qsa','notes',
       'lat','lng','cidade','regiao','google_maps_link',
       'kw_sold','metadata','reason_for_loss','seller_id','seller_name'
