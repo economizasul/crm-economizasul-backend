@@ -45,6 +45,7 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
  */
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+  const dateOnlyValues = [values[0], values[1]];
 
   const query = `
     SELECT
@@ -61,14 +62,14 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
 
   try {
     const [mainResult, notesResult, leadsResult] = await Promise.all([
-      pool.query(query, values),
+      pool.query(query, dateOnlyValues),
       pool.query(`
         SELECT COUNT(*) as total
         FROM notes n
         JOIN leads l ON n.lead_id = l.id
         ${whereClause}
         AND n.created_at >= $1 AND n.created_at <= $2
-      `, [values[0], values[1]]),
+      `, dateOnlyValues),
       pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
     ]);
 
