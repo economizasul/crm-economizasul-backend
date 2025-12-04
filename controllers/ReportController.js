@@ -31,17 +31,12 @@ class ReportController {
 
   static async getReportData(req, res) {
     try {
-      // Aceita formatos:
-      //  - { filters: { ... } }
-      //  - { startDate: '...', endDate: '...', ... } (body direto)
-      //  - query.filters
+      // === FILTROS (mantido igual) ===
       let filters = {};
       if (req.body) {
-        // prefer explicit req.body.filters
         if (req.body.filters && typeof req.body.filters === 'object') {
           filters = req.body.filters;
         } else {
-          // se o body parece ser o próprio objeto de filtros (tem campos esperados), use-o
           const bodyKeys = Object.keys(req.body || {});
           const likelyFilterKeys = ['startDate', 'endDate', 'vendedor', 'ownerId', 'source', 'start_date', 'end_date'];
           const hasFilterKey = bodyKeys.some(k => likelyFilterKeys.includes(k));
@@ -49,7 +44,6 @@ class ReportController {
         }
       }
 
-      // fallback para query.filters (string/json)
       if ((!filters || Object.keys(filters).length === 0) && req.query && req.query.filters) {
         try {
           filters = typeof req.query.filters === 'string' ? JSON.parse(req.query.filters) : req.query.filters;
@@ -63,11 +57,30 @@ class ReportController {
 
       const data = await ReportDataService.getAllDashboardData(filters, userId, isAdmin);
       return res.status(200).json({ success: true, data });
+
     } catch (error) {
-      console.error('ERRO INTERNO: ReportController.getReportData falhou:', error.message || error);
+      // LOG COMPLETO — AGORA 100% CORRETO
+      console.error("===== ERRO CRÍTICO NO /api/v1/reports/data =====");
+      console.error("Horário:", new Date().toISOString());
+      console.error("Usuário:", req.user?.id, req.user?.name, "Admin:", req.user?.role === 'Admin');
+      console.error("Filtros:", JSON.stringify(req.body, null, 2));
+      console.error("Erro completo:", error);
+      if (error.message) console.error("Message:", error.message);
+      if (error.code) console.error("Code:", error.code);
+      if (error.detail) console.error("Detail:", error.detail);
+      if (error.hint) console.error("Hint:", error.hint);
+      if (error.position) console.error("Position:", error.position);
+      if (error.stack) console.error("Stack:", error.stack);
+
       return res.status(500).json({
         success: false,
-        message: 'Falha ao carregar dados do relatório.'
+        message: "Erro interno no relatório (debug ativo)",
+        debug: {
+          code: error.code || "unknown",
+          message: error.message || "sem mensagem",
+          detail: error.detail || null,
+          hint: error.hint || null
+        }
       });
     }
   }
