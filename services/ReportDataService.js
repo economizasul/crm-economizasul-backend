@@ -81,20 +81,31 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
     const taxaInapto = Number(row.taxa_inapto_percent || 0);
     const atendimentosRealizados = Number(notesResult.rows[0]?.total || 0);
 
-    // === TEMPO MÉDIO (com updated_at) ===
+    // === TEMPO MÉDIO SEGURO (protege contra datas null/inválidas) ===
     const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
     const ativos = leads.filter(l => {
       const s = (l.status || '').toLowerCase();
       return s !== 'ganho' && s !== 'perdido' && s !== 'inapto';
     });
 
-    const tempoMedioFechamentoHoras = ganhos.length > 0
-      ? ganhos.reduce((acc, l) => acc + (new Date(l.updated_at) - new Date(l.created_at)) / (1000 * 60 * 60), 0) / ganhos.length
-      : 0;
+    const calculateAvgHours = (leadsList) => {
+      if (!Array.isArray(leadsList) || leadsList.length === 0) return 0;
+      let validCount = 0;
+      let totalHours = 0;
+      for (const l of leadsList) {
+        const created = l.created_at ? new Date(l.created_at) : null;
+        const updated = l.updated_at ? new Date(l.updated_at) : null;
+        if (created && updated && !isNaN(created) && !isNaN(updated) && updated >= created) {
+          const diffMs = updated - created;
+          totalHours += diffMs / (1000 * 60 * 60);
+          validCount++;
+        }
+      }
+      return validCount > 0 ? Number((totalHours / validCount).toFixed(2)) : 0;
+    };
 
-    const tempoMedioAtendimentoHoras = ativos.length > 0
-      ? ativos.reduce((acc, l) => acc + (new Date(l.updated_at) - new Date(l.created_at)) / (1000 * 60 * 60), 0) / ativos.length
-      : 0;
+    const tempoMedioFechamentoHoras = calculateAvgHours(ganhos);
+    const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
 
     return {
       totalLeads: Number(row.total_leads || 0),
