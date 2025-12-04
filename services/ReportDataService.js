@@ -42,102 +42,75 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
 
 /**
  * getSummaryAndProductivity
- * (mantive sua lógica original — apenas certifique-se que a query funcione com seu schema)
  */
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
   const query = `
     SELECT
       COALESCE(COUNT(*), 0) AS total_leads,
-
-      -- ✔ LEADS GANHOS (status = 'Ganho')
       COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
-
-      -- ✔ KW vendido (usa avg_consumption direto pois é numérico)
       COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN avg_consumption ELSE 0 END), 0) AS total_won_value_kw,
-
-      -- ✔ PERDIDOS
       COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
-
-      -- ✔ Taxa de conversão
-      COALESCE(
-        (SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0),
-        0
-      ) AS conversion_rate_percent,
-
-      -- ✔ Tempo médio de conversão: usa date_won
-      COALESCE(
-        AVG(
-          CASE 
-            WHEN LOWER(status) = 'ganho' AND date_won IS NOT NULL 
-            THEN EXTRACT(EPOCH FROM (date_won - created_at)) / 86400
-            ELSE NULL
-          END
-        ),
-        0
-      ) AS avg_closing_time_days
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END), 0) AS total_inapto_count,
+      COALESCE((SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS conversion_rate_percent,
+      COALESCE((SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS taxa_inapto_percent
     FROM leads
     ${whereClause}
   `;
 
   try {
-    const result = await pool.query(query, values);
-    const row = result.rows[0] || {};
-    const leadQuery = `
-      SELECT id, status, created_at, updated_at
-      FROM leads
-      ${whereClause}
-    `;
+    const [mainResult, notesResult, leadsResult] = await Promise.all([
+      pool.query(query, values),
+      pool.query(`
+        SELECT COUNT(*) as total
+        FROM notes n
+        JOIN leads l ON n.lead_id = l.id
+        ${whereClause}
+        AND n.created_at >= $1 AND n.created_at <= $2
+      `, values),
+      pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
+    ]);
 
-    const leadRes = await pool.query(leadQuery, values);
-    const leads = leadRes.rows || [];
-    const ganhos = leads.filter(l => String(l.status || '').toLowerCase() === 'ganho');
+    const row = mainResult.rows[0] || {};
+    const leads = leadsResult.rows || [];
 
-    let tempoMedioFechamentoHoras = 0;
+    // === DADOS NOVOS ===
+    const totalInaptoCount = Number(row.total_inapto_count || 0);
+    const taxaInapto = Number(row.taxa_inapto_percent || 0);
+    const atendimentosRealizados = Number(notesResult.rows[0]?.total || 0);
 
-    if (ganhos.length > 0) {
-      tempoMedioFechamentoHoras =
-        ganhos.reduce((acc, l) => {
-          const criacao = new Date(l.created_at);
-          const fechamento = new Date(l.updated_at);
-          return acc + (fechamento - criacao) / (1000 * 60 * 60);
-        }, 0) / ganhos.length;
-    }
+    // === TEMPO MÉDIO (com updated_at) ===
+    const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
+    const ativos = leads.filter(l => {
+      const s = (l.status || '').toLowerCase();
+      return s !== 'ganho' && s !== 'perdido' && s !== 'inapto';
+    });
 
-    const ativos = leads.filter(
-      l => {
-        const s = String(l.status || '').toLowerCase();
-        return s !== 'ganho' && s !== 'perdido';
-      }
-    );
+    const tempoMedioFechamentoHoras = ganhos.length > 0
+      ? ganhos.reduce((acc, l) => acc + (new Date(l.updated_at) - new Date(l.created_at)) / (1000 * 60 * 60), 0) / ganhos.length
+      : 0;
 
-    let tempoMedioAtendimentoHoras = 0;
-
-    if (ativos.length > 0) {
-      tempoMedioAtendimentoHoras =
-        ativos.reduce((acc, l) => {
-          const criacao = new Date(l.created_at);
-          const atualizacao = new Date(l.updated_at);
-          return acc + (atualizacao - criacao) / (1000 * 60 * 60);
-        }, 0) / ativos.length;
-    }
+    const tempoMedioAtendimentoHoras = ativos.length > 0
+      ? ativos.reduce((acc, l) => acc + (new Date(l.updated_at) - new Date(l.created_at)) / (1000 * 60 * 60), 0) / ativos.length
+      : 0;
 
     return {
       totalLeads: Number(row.total_leads || 0),
       totalWonCount: Number(row.total_won_count || 0),
       totalWonValueKW: Number(row.total_won_value_kw || 0),
       totalLostCount: Number(row.total_lost_count || 0),
-      conversionRate: Number(row.conversion_rate_percent || 0) / 100,
-      avgClosingTimeDays: Number(row.avg_closing_time_days || 0),
-
+      totalInaptoCount,
+      taxaInapto,
+      atendimentosRealizados,
+      conversionRate: Number(row.conversion_rate_percent || 0),
+      avgClosingTimeDays: 0,
       tempoMedioFechamentoHoras,
       tempoMedioAtendimentoHoras
     };
 
   } catch (err) {
     console.error('SQL ERROR getSummaryAndProductivity:', err.message);
-    console.error('Query:', query);
-    console.error('Values:', values);
     throw err;
   }
 }
@@ -204,29 +177,52 @@ async function getOriginFunnel(filters, userId, isAdmin) {
 async function getLostReasonsData(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
-  const totalLostQuery = `
-    SELECT COALESCE(COUNT(*),0) AS total_lost
-    FROM leads
-    ${whereClause} AND LOWER(status) = 'perdido'
-  `;
-  const reasonsQuery = `
-    SELECT reason_for_loss AS reason, COUNT(*)::int AS count
+  const query = `
+    SELECT 
+      COALESCE(NULLIF(TRIM(reason_for_loss), ''), 'Não informado') AS reason_raw,
+      COUNT(*)::int AS count
     FROM leads
     ${whereClause}
-    AND LOWER(status) = 'perdido' AND reason_for_loss IS NOT NULL
-    GROUP BY reason_for_loss
+    AND LOWER(status) = 'perdido'
+    GROUP BY reason_raw
     ORDER BY count DESC
   `;
 
   try {
-    const [totalLostRes, reasonsRes] = await Promise.all([
-      pool.query(totalLostQuery, values),
-      pool.query(reasonsQuery, values)
-    ]);
+    const result = await pool.query(query, values);
 
-    const totalLost = Number(totalLostRes.rows[0]?.total_lost || 0);
-    const reasons = reasonsRes.rows.map(r => ({ reason: r.reason, count: Number(r.count || 0) }));
-    return { reasons, totalLost };
+    const totalLost = result.rows.reduce((sum, r) => sum + Number(r.count), 0);
+
+    const mapaMotivos = {
+      'oferta_melhor': 'Oferta Melhor..:',
+      'incerteza': 'Incerteza..:',
+      'geracao_propria': 'Geração Própria..:',
+      'burocracia': 'Burocracia..:',
+      'contrato': 'Contrato..:',
+      'restricoes_tecnicas': 'Restrições Técnicas..:',
+      'nao_responsavel': 'Não é o Responsável..:',
+      'silencio': 'Silêncio..:',
+      'ja_possui_gd': 'Já Possui GD..:',
+      'outro_estado': 'Outro Estado..:',
+      'outro': 'Outro..:',
+      'não informado': 'Outro..:'
+    };
+
+    const reasons = result.rows.map(r => {
+      const chave = (r.reason_raw || 'outro').toLowerCase().replace(/\s+/g, '_');
+      const motivoFormatado = mapaMotivos[chave] || 'Outro..:';
+
+      return {
+        reason: motivoFormatado,
+        count: Number(r.count),
+        percentage: totalLost > 0 ? Number((r.count / totalLost * 100).toFixed(1)) : 0
+      };
+    });
+
+    return {
+      reasons: reasons.sort((a, b) => b.count - a.count),
+      totalLost
+    };
   } catch (err) {
     console.error('SQL ERROR getLostReasonsData:', err.message);
     throw err;
