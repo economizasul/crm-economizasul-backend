@@ -56,7 +56,13 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
     SELECT
       COALESCE(COUNT(*), 0) AS total_leads,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN avg_consumption ELSE 0 END), 0) AS total_won_value_kw,
+      COALESCE(SUM(
+        CASE 
+          WHEN LOWER(status) = 'ganho' 
+          THEN (NULLIF(TRIM(avg_consumption), '')::numeric) 
+          ELSE 0 
+        END
+      ), 0) AS total_won_value_kw,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END), 0) AS total_inapto_count,
       COALESCE((SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS conversion_rate_percent,
