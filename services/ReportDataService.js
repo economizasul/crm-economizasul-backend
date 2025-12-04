@@ -68,7 +68,7 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
         JOIN leads l ON n.lead_id = l.id
         ${whereClause}
         AND n.created_at >= $1 AND n.created_at <= $2
-      `, values),
+      `, [values[0], values[1]]),
       pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
     ]);
 
