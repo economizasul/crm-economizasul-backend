@@ -45,7 +45,12 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
  */
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-  const dateOnlyValues = [values[0], values[1]];
+  const today = new Date();
+  const defaultEnd = format(today, 'yyyy-MM-dd');
+  const defaultStart = format(subDays(today, 29), 'yyyy-MM-dd');
+  const start = (filters?.startDate) || defaultStart;
+  const end = (filters?.endDate) || defaultEnd;
+  const dateOnlyValues = [`${start} 00:00:00`, `${end} 23:59:59`];
 
   const query = `
     SELECT
@@ -371,8 +376,18 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
       forecasting: { forecastedKwWeighted: 0 }
     };
   } catch (err) {
-    console.error('CRITICAL ERROR getAllDashboardData:', err);
-    throw err;
+    console.error('=== ERRO CRÍTICO NO RELATÓRIO COMPLETO ===');
+    console.error('Data/hora:', new Date().toISOString());
+    console.error('Filtros recebidos:', filters);
+    console.error('Usuário ID:', userId, 'isAdmin:', isAdmin);
+    console.error('Erro completo:', err); // <--- ESSA LINHA VAI MOSTRAR TUDO
+    
+    // Opcional: se quiser ver exatamente qual função falhou
+    if (err.message) console.error('Mensagem:', err.message);
+    if (err.stack) console.error('Stack:', err.stack);
+
+    // Resposta amigável pro frontend (mantém o que já tinha)
+    throw err; // ou pode fazer: return { success: false, message: "Erro interno", debug: err.message }
   }
 }
 
