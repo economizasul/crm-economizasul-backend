@@ -59,7 +59,11 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
       COALESCE(SUM(
         CASE 
           WHEN LOWER(status) = 'ganho' 
-          THEN (NULLIF(TRIM(avg_consumption), '')::numeric) 
+          THEN (CASE 
+                  WHEN TRIM(avg_consumption) ~ '^[0-9]+\\.?[0-9]*$' 
+                  THEN TRIM(avg_consumption)::numeric 
+                  ELSE 0 
+                END)
           ELSE 0 
         END
       ), 0) AS total_won_value_kw,
