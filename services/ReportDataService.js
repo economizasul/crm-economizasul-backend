@@ -40,71 +40,33 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
   return { whereClause: where, values };
 }
 
-/**
- * getSummaryAndProductivity - VERSÃO 100% CORRIGIDA
- */
-async function getSummaryAndProductivity(filters, userId, isAdmin) {
-  const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-
-  const query = `
-    SELECT
-      COALESCE(COUNT(*), 0) AS total_leads,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL THEN NULLIF(TRIM(avg_consumption::text), '')::numeric ELSE 0 END), 0) AS total_won_value_kw,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END), 0) AS total_inapto_count,
-      COALESCE(SUM(CASE WHEN notes IS NOT NULL AND TRIM(notes) <> '' THEN 1 ELSE 0 END), 0) AS atendimentos_realizados,
-      COALESCE((SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS conversion_rate_percent,
-      COALESCE((SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS taxa_inapto_percent
-    FROM leads
-    ${whereClause}
-  `;
-
+async function getAllDashboardData(filters = {}, userId = null, isAdmin = false) {
   try {
-    const [mainResult, leadsResult] = await Promise.all([
-      pool.query(query, values),
-      pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
+    const [
+      summary, stageFunnel, originFunnelResult,
+      lostReasons, dailyActivity, mapLocations
+    ] = await Promise.all([
+      getSummaryAndProductivity(filters, userId, isAdmin),
+      getStageFunnel(filters, userId, isAdmin),
+      getOriginFunnel(filters, userId, isAdmin),
+      getLostReasonsData(filters, userId, isAdmin),
+      getDailyActivity(filters, userId, isAdmin),
+      getMapLocations(filters, userId, isAdmin)
     ]);
 
-    const row = mainResult.rows[0] || {};
-    const leads = leadsResult.rows || [];
-
-    const calculateAvgHours = (list) => {
-      if (!list || list.length === 0) return 0;
-      const valid = list
-        .filter(l => l.created_at && l.updated_at)
-        .map(l => {
-          const diff = new Date(l.updated_at) - new Date(l.created_at);
-          return diff > 0 ? diff / (3600000) : null;
-        })
-        .filter(h => h !== null);
-      return valid.length > 0 ? Number((valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(2)) : 0;
-    };
-
-    const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
-    const ativos = leads.filter(l => {
-      const s = (l.status || '').toLowerCase();
-      return s !== 'ganho' && s !== 'perdido' && s !== 'inapto';
-    });
-
-    const tempoMedioFechamentoHoras = calculateAvgHours(ganhos);
-    const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
-
     return {
-      totalLeads: Number(row.total_leads || 0),
-      totalWonCount: Number(row.total_won_count || 0),
-      totalWonValueKW: Number(row.total_won_value_kw || 0),
-      totalLostCount: Number(row.total_lost_count || 0),
-      totalInaptoCount: Number(row.total_inapto_count || 0),
-      taxaInapto: Number(row.taxa_inapto_percent || 0),
-      atendimentosRealizados: Number(row.atendimentos_realizados || 0),
-      conversionRate: Number(row.conversion_rate_percent || 0),
-      tempoMedioFechamentoHoras,
-      tempoMedioAtendimentoHoras
+      globalSummary: summary,
+      productivity: { ...summary },
+      funnel: stageFunnel || [],
+      originStats: originFunnelResult.obj || {},
+      funnelOrigins: originFunnelResult.arr || [],
+      lostReasons,
+      dailyActivity,
+      mapLocations,
+      forecasting: { forecastedKwWeighted: 0 }
     };
-
   } catch (err) {
-    console.error('ERRO EM getSummaryAndProductivity:', err);
+    console.error('ERRO CRÍTICO EM getAllDashboardData:', err);
     throw err;
   }
 }
@@ -341,6 +303,6 @@ module.exports = {
   getDailyActivity,
   getLeadsForExport,
   getMapLocations,
-  //getAllDashboardData,
+  getAllDashboardData,
   getMotivosPerdaReport
 };
