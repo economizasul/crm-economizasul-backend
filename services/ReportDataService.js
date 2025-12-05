@@ -45,6 +45,8 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
  */
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
+  // CORREÇÃO DEFINITIVA: sempre usar as datas originais, nunca values[0]/values[1]
   const today = new Date();
   const defaultEnd = format(today, 'yyyy-MM-dd');
   const defaultStart = format(subDays(today, 29), 'yyyy-MM-dd');
@@ -56,13 +58,7 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
     SELECT
       COALESCE(COUNT(*), 0) AS total_leads,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
-      COALESCE(SUM(
-        CASE 
-          WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL 
-          THEN avg_consumption::numeric 
-          ELSE 0 
-        END
-      ), 0) AS total_won_value_kw,
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL THEN avg_consumption::numeric ELSE 0 END), 0) AS total_won_value_kw,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END), 0) AS total_inapto_count,
       COALESCE((SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS conversion_rate_percent,
@@ -73,12 +69,14 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
 
   try {
     const [mainResult, notesResult, leadsResult] = await Promise.all([
-      pool.query(query, dateOnlyValues),
+      pool.query(query, values), // ← usa values completo (pode ter 2 ou 3 parâmetros)
       pool.query(`
         SELECT COUNT(*) as total
-        FROM notes
-        WHERE created_at >= $1 AND created_at <= $2
-      `, dateOnlyValues),
+        FROM notes n
+        JOIN leads l ON n.lead_id = l.id
+        ${whereClause}
+        AND n.created_at >= $1 AND n.created_at <= $2
+      `, dateOnlyValues), // ← só 2 parâmetros → dateOnlyValues
       pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
     ]);
 
