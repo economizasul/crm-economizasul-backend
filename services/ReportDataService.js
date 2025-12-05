@@ -46,11 +46,6 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
-  // DATAS PURAS E SEGURAS (nunca mais depende do values[])
-  const start = (filters?.startDate) || format(subDays(new Date(), 29), 'yyyy-MM-dd');
-  const end = (filters?.endDate) || format(new Date(), 'yyyy-MM-dd');
-  const dateOnlyValues = [`${start} 00:00:00`, `${end} 23:59:59`];
-
   const query = `
     SELECT
       COALESCE(COUNT(*), 0) AS total_leads,
@@ -58,6 +53,7 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
       COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL THEN NULLIF(TRIM(avg_consumption::text), '')::numeric ELSE 0 END), 0) AS total_won_value_kw,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
       COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END), 0) AS total_inapto_count,
+      COALESCE(SUM(CASE WHEN notes IS NOT NULL AND TRIM(notes) <> '' THEN 1 ELSE 0 END), 0) AS atendimentos_realizados,
       COALESCE((SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS conversion_rate_percent,
       COALESCE((SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS taxa_inapto_percent
     FROM leads
@@ -65,31 +61,21 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
   `;
 
   try {
-    const [mainResult, notesResult, leadsResult] = await Promise.all([
+    const [mainResult, leadsResult] = await Promise.all([
       pool.query(query, values),
-      // SIMPLES, SEGURO E SEM JOIN PROBLEMÁTICO
-      pool.query(`
-        SELECT COUNT(*) as total
-        FROM notes
-        WHERE created_at >= $1 AND created_at <= $2
-      `, dateOnlyValues),
       pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
     ]);
 
     const row = mainResult.rows[0] || {};
     const leads = leadsResult.rows || [];
 
-    const atendimentosRealizados = Number(notesResult.rows[0]?.total || 0);
-
-    // TEMPO MÉDIO SEGURO
     const calculateAvgHours = (list) => {
       if (!list || list.length === 0) return 0;
       const valid = list
         .filter(l => l.created_at && l.updated_at)
         .map(l => {
-          const c = new Date(l.created_at);
-          const u = new Date(l.updated_at);
-          return (!isNaN(c) && !isNaN(u) && u >= c) ? (u - c) / (3600000) : null;
+          const diff = new Date(l.updated_at) - new Date(l.created_at);
+          return diff > 0 ? diff / (3600000) : null;
         })
         .filter(h => h !== null);
       return valid.length > 0 ? Number((valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(2)) : 0;
@@ -111,9 +97,8 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
       totalLostCount: Number(row.total_lost_count || 0),
       totalInaptoCount: Number(row.total_inapto_count || 0),
       taxaInapto: Number(row.taxa_inapto_percent || 0),
-      atendimentosRealizados,
+      atendimentosRealizados: Number(row.atendimentos_realizados || 0),
       conversionRate: Number(row.conversion_rate_percent || 0),
-      avgClosingTimeDays: 0,
       tempoMedioFechamentoHoras,
       tempoMedioAtendimentoHoras
     };
