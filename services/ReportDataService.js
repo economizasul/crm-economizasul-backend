@@ -202,7 +202,7 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
     FROM leads,
          jsonb_array_elements(
            CASE 
-             WHEN jsonb_typeof(notes) = 'array' THEN notes 
+             WHEN jsonb_typeof(l.source::jsonb) IS NOT NULL  
              WHEN notes IS NULL OR notes = '[]'::jsonb THEN '[]'::jsonb
              ELSE '[]'::jsonb 
            END
