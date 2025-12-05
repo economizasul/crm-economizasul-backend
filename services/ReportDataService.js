@@ -197,20 +197,21 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
   `;
 
   // 2. SEGUNDA QUERY: contar NOTAS criadas dentro do período (usando JSONB)
-  const notesQuery = `
-    SELECT COUNT(*) AS notes_in_period
-    FROM leads,
-         jsonb_array_elements(
-           CASE 
-             WHEN jsonb_typeof(l.source::jsonb) IS NOT NULL  
-             WHEN notes IS NULL OR notes = '[]'::jsonb THEN '[]'::jsonb
-             ELSE '[]'::jsonb 
-           END
-         ) AS note_elem
-    WHERE ${whereClause.replace('WHERE', '')}  -- remove o WHERE pra não duplicar
-      AND note_elem->>'timestamp' IS NOT NULL
-    AND TO_TIMESTAMP((note_elem->>'timestamp')::bigint / 1000) BETWEEN $1 AND $2
-  `;
+const notesQuery = `
+  SELECT COUNT(*) AS notes_in_period
+  FROM leads,
+       jsonb_array_elements(
+         CASE 
+           WHEN notes IS NULL OR jsonb_typeof(notes) <> 'array' THEN '[]'::jsonb
+           ELSE notes
+         END
+       ) AS note_elem
+  WHERE ${whereClause.replace('WHERE', '')}
+    AND note_elem->>'timestamp' IS NOT NULL
+    AND TO_TIMESTAMP((note_elem->>'timestamp')::bigint / 1000)
+        BETWEEN $1 AND $2
+`;
+
 
   try {
     const [baseResult, notesResult, leadsResult] = await Promise.all([
