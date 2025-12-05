@@ -184,16 +184,43 @@ async function getLeadsForExport(filters, userId, isAdmin) {
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
+  // ----------------------------------------------------------
+  // 1) MÉTRICAS DIRETAS VIA SQL (seguras para status VARCHAR)
+  // ----------------------------------------------------------
   const query = `
     SELECT
       COALESCE(COUNT(*), 0) AS total_leads,
+
       COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL THEN NULLIF(TRIM(avg_consumption::text), '')::numeric ELSE 0 END), 0) AS total_won_value_kw,
+
+      COALESCE(SUM(
+        CASE
+          WHEN LOWER(status) = 'ganho'
+            AND avg_consumption IS NOT NULL
+            AND TRIM(avg_consumption::text) <> ''
+          THEN NULLIF(TRIM(avg_consumption::text), '')::numeric
+          ELSE 0
+        END
+      ), 0) AS total_won_value_kw,
+
       COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END), 0) AS total_inapto_count,
-      COALESCE(SUM(CASE WHEN notes IS NOT NULL AND TRIM(notes) <> '' THEN 1 ELSE 0 END), 0) AS atendimentos_realizados,
-      COALESCE((SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS conversion_rate_percent,
-      COALESCE((SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS taxa_inapto_percent
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto'  THEN 1 ELSE 0 END), 0) AS total_inapto_count,
+
+      -- notes é TEXT, então basta verificar se tem conteúdo
+      COALESCE(SUM(CASE WHEN notes IS NOT NULL AND TRIM(notes) <> '' THEN 1 ELSE 0 END), 0)
+        AS atendimentos_realizados,
+
+      COALESCE(
+        (SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100)
+        / NULLIF(COUNT(*), 0),
+        0
+      ) AS conversion_rate_percent,
+
+      COALESCE(
+        (SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END)::numeric * 100)
+        / NULLIF(COUNT(*), 0),
+        0
+      ) AS taxa_inapto_percent
     FROM leads
     ${whereClause}
   `;
@@ -207,16 +234,22 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
     const row = mainResult.rows[0] || {};
     const leads = leadsResult.rows || [];
 
+    // ----------------------------------------------------------
+    // 2) CALCULAR DURAÇÃO EM HORAS (feito no JS)
+    // ----------------------------------------------------------
     const calculateAvgHours = (list) => {
       if (!list || list.length === 0) return 0;
-      const valid = list
+      const diffList = list
         .filter(l => l.created_at && l.updated_at)
         .map(l => {
           const diff = new Date(l.updated_at) - new Date(l.created_at);
-          return diff > 0 ? diff / (3600000) : null;
+          return diff > 0 ? diff / 3600000 : null;
         })
-        .filter(h => h !== null);
-      return valid.length > 0 ? Number((valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(2)) : 0;
+        .filter(x => x !== null);
+
+      return diffList.length > 0
+        ? Number((diffList.reduce((a, b) => a + b, 0) / diffList.length).toFixed(2))
+        : 0;
     };
 
     const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
@@ -228,6 +261,9 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
     const tempoMedioFechamentoHoras = calculateAvgHours(ganhos);
     const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
 
+    // ----------------------------------------------------------
+    // 3) RETORNO FINAL
+    // ----------------------------------------------------------
     return {
       totalLeads: Number(row.total_leads || 0),
       totalWonCount: Number(row.total_won_count || 0),
@@ -242,10 +278,11 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
     };
 
   } catch (err) {
-    console.error('ERRO EM getSummaryAndProductivity:', err);
+    console.error("ERRO EM getSummaryAndProductivity:", err);
     throw err;
   }
 }
+
 
 async function getMotivosPerdaReport(filters = {}, userId = null, isAdmin = false) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
