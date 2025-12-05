@@ -184,56 +184,29 @@ async function getLeadsForExport(filters, userId, isAdmin) {
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
-  // 1. PRIMEIRA QUERY: métricas básicas + total de leads no período
-  const baseQuery = `
+  const query = `
     SELECT
-      COUNT(*) AS total_leads,
-      SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END) AS total_won_count,
-      SUM(CASE WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL THEN NULLIF(TRIM(avg_consumption::text), '')::numeric ELSE 0 END) AS total_won_value_kw,
-      SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END) AS total_lost_count,
-      SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END) AS total_inapto_count_period
+      COALESCE(COUNT(*), 0) AS total_leads,
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL THEN NULLIF(TRIM(avg_consumption::text), '')::numeric ELSE 0 END), 0) AS total_won_value_kw,
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
+      COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END), 0) AS total_inapto_count,
+      COALESCE(SUM(CASE WHEN notes IS NOT NULL AND TRIM(notes) <> '' THEN 1 ELSE 0 END), 0) AS atendimentos_realizados,
+      COALESCE((SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS conversion_rate_percent,
+      COALESCE((SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END)::numeric * 100) / NULLIF(COUNT(*), 0), 0) AS taxa_inapto_percent
     FROM leads
     ${whereClause}
   `;
 
-  // 2. SEGUNDA QUERY: contar NOTAS criadas dentro do período (usando JSONB)
-const notesQuery = `
-  SELECT COUNT(*) AS notes_in_period
-  FROM leads,
-       jsonb_array_elements(
-         CASE 
-           WHEN notes IS NULL OR jsonb_typeof(notes) <> 'array' THEN '[]'::jsonb
-           ELSE notes
-         END
-       ) AS note_elem
-  WHERE ${whereClause.replace('WHERE', '')}
-    AND note_elem->>'timestamp' IS NOT NULL
-    AND TO_TIMESTAMP((note_elem->>'timestamp')::bigint / 1000)
-        BETWEEN $1 AND $2
-`;
-
-
   try {
-    const [baseResult, notesResult, leadsResult] = await Promise.all([
-      pool.query(baseQuery, values),
-      pool.query(notesQuery, values), // usa os mesmos valores (start e end já estão em values[0] e values[1])
+    const [mainResult, leadsResult] = await Promise.all([
+      pool.query(query, values),
       pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
     ]);
 
-    const row = baseResult.rows[0] || {};
+    const row = mainResult.rows[0] || {};
     const leads = leadsResult.rows || [];
 
-    // Contagem correta de notas no período
-    const totalNotesInPeriod = Number(notesResult.rows[0]?.notes_in_period || 0);
-
-    // Taxa de inaptos correta (só do período)
-    const totalLeadsPeriod = Number(row.total_leads || 0);
-    const inaptosNoPeriodo = Number(row.total_inapto_count_period || 0);
-    const taxaInaptoPercent = totalLeadsPeriod > 0 
-      ? Number(((inaptosNoPeriodo / totalLeadsPeriod) * 100).toFixed(2)) 
-      : 0;
-
-    // Cálculo dos tempos médios (mantido igual)
     const calculateAvgHours = (list) => {
       if (!list || list.length === 0) return 0;
       const valid = list
@@ -256,20 +229,14 @@ const notesQuery = `
     const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
 
     return {
-      totalLeads: totalLeadsPeriod,
+      totalLeads: Number(row.total_leads || 0),
       totalWonCount: Number(row.total_won_count || 0),
       totalWonValueKW: Number(row.total_won_value_kw || 0),
       totalLostCount: Number(row.total_lost_count || 0),
-
-      // AQUI ESTÃO AS DUAS MÉTRICAS CORRIGIDAS
-      totalInaptoCount: inaptosNoPeriodo,           // ← quantidade de inaptos no período
-      taxaInapto: taxaInaptoPercent,                // ← % correta do período
-      atendimentosRealizados: totalNotesInPeriod,  // ← quantidade real de notas feitas no período
-
-      conversionRate: totalLeadsPeriod > 0 
-        ? Number(((row.total_won_count || 0) / totalLeadsPeriod * 100).toFixed(2)) 
-        : 0,
-
+      totalInaptoCount: Number(row.total_inapto_count || 0),
+      taxaInapto: Number(row.taxa_inapto_percent || 0),
+      atendimentosRealizados: Number(row.atendimentos_realizados || 0),
+      conversionRate: Number(row.conversion_rate_percent || 0),
       tempoMedioFechamentoHoras,
       tempoMedioAtendimentoHoras
     };
