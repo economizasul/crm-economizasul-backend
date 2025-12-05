@@ -216,33 +216,103 @@ async function getLeadsForExport(filters, userId, isAdmin) {
   return r.rows;
 }
 
-async function getAllDashboardData(filters = {}, userId = null, isAdmin = false) {
+/**
+ * getSummaryAndProductivity - VERSÃO CORRIGIDA E FINAL (05/12/2025)
+ */
+async function getSummaryAndProductivity(filters, userId, isAdmin) {
+  const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
+  // 1. PRIMEIRA QUERY: métricas básicas + total de leads no período
+  const baseQuery = `
+    SELECT
+      COUNT(*) AS total_leads,
+      SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END) AS total_won_count,
+      SUM(CASE WHEN LOWER(status) = 'ganho' AND avg_consumption IS NOT NULL THEN NULLIF(TRIM(avg_consumption::text), '')::numeric ELSE 0 END) AS total_won_value_kw,
+      SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END) AS total_lost_count,
+      SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END) AS total_inapto_count_period
+    FROM leads
+    ${whereClause}
+  `;
+
+  // 2. SEGUNDA QUERY: contar NOTAS criadas dentro do período (usando JSONB)
+  const notesQuery = `
+    SELECT COUNT(*) AS notes_in_period
+    FROM leads,
+         jsonb_array_elements(
+           CASE 
+             WHEN jsonb_typeof(notes) = 'array' THEN notes 
+             WHEN notes IS NULL OR notes = '[]'::jsonb THEN '[]'::jsonb
+             ELSE '[]'::jsonb 
+           END
+         ) AS note_elem
+    WHERE ${whereClause.replace('WHERE', '')}  -- remove o WHERE pra não duplicar
+      AND note_elem->>'timestamp' IS NOT NULL
+    AND TO_TIMESTAMP((note_elem->>'timestamp')::bigint / 1000) BETWEEN $1 AND $2
+  `;
+
   try {
-    const [
-      summary, stageFunnel, originFunnelResult,
-      lostReasons, dailyActivity, mapLocations
-    ] = await Promise.all([
-      getSummaryAndProductivity(filters, userId, isAdmin),
-      getStageFunnel(filters, userId, isAdmin),
-      getOriginFunnel(filters, userId, isAdmin),
-      getLostReasonsData(filters, userId, isAdmin),
-      getDailyActivity(filters, userId, isAdmin),
-      getMapLocations(filters, userId, isAdmin)
+    const [baseResult, notesResult, leadsResult] = await Promise.all([
+      pool.query(baseQuery, values),
+      pool.query(notesQuery, values), // usa os mesmos valores (start e end já estão em values[0] e values[1])
+      pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
     ]);
 
-    return {
-      globalSummary: summary,
-      productivity: { ...summary },
-      funnel: stageFunnel || [],
-      originStats: originFunnelResult.obj || {},
-      funnelOrigins: originFunnelResult.arr || [],
-      lostReasons,
-      dailyActivity,
-      mapLocations,
-      forecasting: { forecastedKwWeighted: 0 }
+    const row = baseResult.rows[0] || {};
+    const leads = leadsResult.rows || [];
+
+    // Contagem correta de notas no período
+    const totalNotesInPeriod = Number(notesResult.rows[0]?.notes_in_period || 0);
+
+    // Taxa de inaptos correta (só do período)
+    const totalLeadsPeriod = Number(row.total_leads || 0);
+    const inaptosNoPeriodo = Number(row.total_inapto_count_period || 0);
+    const taxaInaptoPercent = totalLeadsPeriod > 0 
+      ? Number(((inaptosNoPeriodo / totalLeadsPeriod) * 100).toFixed(2)) 
+      : 0;
+
+    // Cálculo dos tempos médios (mantido igual)
+    const calculateAvgHours = (list) => {
+      if (!list || list.length === 0) return 0;
+      const valid = list
+        .filter(l => l.created_at && l.updated_at)
+        .map(l => {
+          const diff = new Date(l.updated_at) - new Date(l.created_at);
+          return diff > 0 ? diff / (3600000) : null;
+        })
+        .filter(h => h !== null);
+      return valid.length > 0 ? Number((valid.reduce((a, b) => a + b, 0) / valid.length).toFixed(2)) : 0;
     };
+
+    const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
+    const ativos = leads.filter(l => {
+      const s = (l.status || '').toLowerCase();
+      return s !== 'ganho' && s !== 'perdido' && s !== 'inapto';
+    });
+
+    const tempoMedioFechamentoHoras = calculateAvgHours(ganhos);
+    const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
+
+    return {
+      totalLeads: totalLeadsPeriod,
+      totalWonCount: Number(row.total_won_count || 0),
+      totalWonValueKW: Number(row.total_won_value_kw || 0),
+      totalLostCount: Number(row.total_lost_count || 0),
+
+      // AQUI ESTÃO AS DUAS MÉTRICAS CORRIGIDAS
+      totalInaptoCount: inaptosNoPeriodo,           // ← quantidade de inaptos no período
+      taxaInapto: taxaInaptoPercent,                // ← % correta do período
+      atendimentosRealizados: totalNotesInPeriod,  // ← quantidade real de notas feitas no período
+
+      conversionRate: totalLeadsPeriod > 0 
+        ? Number(((row.total_won_count || 0) / totalLeadsPeriod * 100).toFixed(2)) 
+        : 0,
+
+      tempoMedioFechamentoHoras,
+      tempoMedioAtendimentoHoras
+    };
+
   } catch (err) {
-    console.error('ERRO CRÍTICO EM getAllDashboardData:', err);
+    console.error('ERRO EM getSummaryAndProductivity:', err);
     throw err;
   }
 }
