@@ -61,7 +61,7 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
           WHEN LOWER(status) = 'ganho' 
           THEN (CASE 
                   WHEN TRIM(avg_consumption) ~ '^[0-9]+\\.?[0-9]*$' 
-                  THEN TRIM(avg_consumption)::numeric 
+                  THEN TRIM(avg_consumption::text)::numeric
                   ELSE 0 
                 END)
           ELSE 0 
