@@ -341,6 +341,6 @@ module.exports = {
   getDailyActivity,
   getLeadsForExport,
   getMapLocations,
-  getAllDashboardData,
+  //getAllDashboardData,
   getMotivosPerdaReport
 };
