@@ -182,107 +182,133 @@ async function getLeadsForExport(filters, userId, isAdmin) {
  * getSummaryAndProductivity - VERSÃO CORRIGIDA E FINAL (05/12/2025)
  */
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
+  const { startDate, endDate } = filters;
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
-  // ----------------------------------------------------------
-  // 1) MÉTRICAS DIRETAS VIA SQL (seguras para status VARCHAR)
-  // ----------------------------------------------------------
-  const query = `
+  // -------------------------------------------
+  // 1) MÉTRICAS DIRETAS
+  // -------------------------------------------
+  const mainQuery = `
     SELECT
-      COALESCE(COUNT(*), 0) AS total_leads,
-
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END), 0) AS total_won_count,
-
-      COALESCE(SUM(
-        CASE
-          WHEN LOWER(status) = 'ganho'
-            AND avg_consumption IS NOT NULL
-            AND TRIM(avg_consumption::text) <> ''
-          THEN NULLIF(TRIM(avg_consumption::text), '')::numeric
-          ELSE 0
-        END
-      ), 0) AS total_won_value_kw,
-
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END), 0) AS total_lost_count,
-      COALESCE(SUM(CASE WHEN LOWER(status) = 'inapto'  THEN 1 ELSE 0 END), 0) AS total_inapto_count,
-
-      -- notes é TEXT, então basta verificar se tem conteúdo
-      COALESCE(SUM(CASE WHEN notes IS NOT NULL AND TRIM(notes) <> '' THEN 1 ELSE 0 END), 0)
-        AS atendimentos_realizados,
-
-      COALESCE(
-        (SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END)::numeric * 100)
-        / NULLIF(COUNT(*), 0),
-        0
-      ) AS conversion_rate_percent,
-
-      COALESCE(
-        (SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END)::numeric * 100)
-        / NULLIF(COUNT(*), 0),
-        0
-      ) AS taxa_inapto_percent
+      COUNT(*) AS total_leads,
+      SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END) AS total_won_count,
+      SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END) AS total_lost_count,
+      SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END) AS total_inapto_count,
+      SUM(CASE
+            WHEN LOWER(status) = 'ganho'
+             AND avg_consumption IS NOT NULL
+             AND TRIM(avg_consumption::text) <> ''
+            THEN NULLIF(TRIM(avg_consumption::text), '')::numeric
+            ELSE 0
+          END) AS total_won_value_kw
     FROM leads
     ${whereClause}
   `;
 
+  // -------------------------------------------
+  // 2) OBTÉM TODOS LEADS PARA CÁLCULOS NO JS
+  // -------------------------------------------
+  const leadsQuery = `
+    SELECT id, status, created_at, updated_at, notes
+    FROM leads
+    ${whereClause}
+  `;
+
+  const [mainResult, leadsResult] = await Promise.all([
+    pool.query(mainQuery, values),
+    pool.query(leadsQuery, values)
+  ]);
+
+  const row = mainResult.rows[0] || {};
+  const leads = leadsResult.rows || [];
+
+  // -------------------------------------------
+  // 3) CLASSIFICAÇÕES
+  // -------------------------------------------
+  const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
+  const perdidos = leads.filter(l => (l.status || '').toLowerCase() === 'perdido');
+  const inaptos = leads.filter(l => (l.status || '').toLowerCase() === 'inapto');
+
+  const ativos = leads.filter(l => {
+    const s = (l.status || '').toLowerCase();
+    return !['ganho','perdido','inapto'].includes(s);
+  });
+
+  // -------------------------------------------
+  // 4) TEMPO MÉDIO EM HORAS
+  // -------------------------------------------
+  const calculateAvgHours = (items) => {
+    const times = items
+      .filter(l => l.created_at && l.updated_at)
+      .map(l => {
+        const diff = new Date(l.updated_at) - new Date(l.created_at);
+        return diff > 0 ? diff / 3600000 : null;
+      })
+      .filter(v => v !== null);
+
+    if (times.length === 0) return 0;
+
+    return Number((times.reduce((a,b)=>a+b,0) / times.length).toFixed(2));
+  };
+
+  const tempoMedioFechamentoHoras = calculateAvgHours(ganhos);
+  const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
+
+// -------------------------------------------
+// 5) ATENDIMENTOS REALIZADOS (Notas no período)
+// -------------------------------------------
+const atendimentosRealizados = leads.reduce((count, lead) => {
+  if (!lead.notes || !lead.notes.trim()) return count;
+
+  let notesArray = [];
   try {
-    const [mainResult, leadsResult] = await Promise.all([
-      pool.query(query, values),
-      pool.query(`SELECT status, created_at, updated_at FROM leads ${whereClause}`, values)
-    ]);
-
-    const row = mainResult.rows[0] || {};
-    const leads = leadsResult.rows || [];
-
-    // ----------------------------------------------------------
-    // 2) CALCULAR DURAÇÃO EM HORAS (feito no JS)
-    // ----------------------------------------------------------
-    const calculateAvgHours = (list) => {
-      if (!list || list.length === 0) return 0;
-      const diffList = list
-        .filter(l => l.created_at && l.updated_at)
-        .map(l => {
-          const diff = new Date(l.updated_at) - new Date(l.created_at);
-          return diff > 0 ? diff / 3600000 : null;
-        })
-        .filter(x => x !== null);
-
-      return diffList.length > 0
-        ? Number((diffList.reduce((a, b) => a + b, 0) / diffList.length).toFixed(2))
-        : 0;
-    };
-
-    const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
-    const ativos = leads.filter(l => {
-      const s = (l.status || '').toLowerCase();
-      return s !== 'ganho' && s !== 'perdido' && s !== 'inapto';
-    });
-
-    const tempoMedioFechamentoHoras = calculateAvgHours(ganhos);
-    const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
-
-    // ----------------------------------------------------------
-    // 3) RETORNO FINAL
-    // ----------------------------------------------------------
-    return {
-      totalLeads: Number(row.total_leads || 0),
-      totalWonCount: Number(row.total_won_count || 0),
-      totalWonValueKW: Number(row.total_won_value_kw || 0),
-      totalLostCount: Number(row.total_lost_count || 0),
-      totalInaptoCount: Number(row.total_inapto_count || 0),
-      taxaInapto: Number(row.taxa_inapto_percent || 0),
-      atendimentosRealizados: Number(row.atendimentos_realizados || 0),
-      conversionRate: Number(row.conversion_rate_percent || 0),
-      tempoMedioFechamentoHoras,
-      tempoMedioAtendimentoHoras
-    };
-
+    notesArray = JSON.parse(lead.notes); // << CORRETO: notas são JSON válido
   } catch (err) {
-    console.error("ERRO EM getSummaryAndProductivity:", err);
-    throw err;
+    console.error("Erro ao fazer parse do JSON de notes:", err);
+    return count;
   }
-}
 
+  const start = new Date(startDate);
+  const end = new Date(endDate + "T23:59:59");
+
+  notesArray.forEach(nota => {
+    if (!nota.timestamp) return;
+
+    const ts = Number(nota.timestamp);
+    const dt = new Date(ts);
+
+    if (dt >= start && dt <= end) {
+      count++;
+    }
+  });
+
+  return count;
+}, 0);
+
+  // -------------------------------------------
+  // 6) RETORNO FINAL
+  // -------------------------------------------
+  return {
+    totalLeads: Number(row.total_leads || 0),
+    totalWonCount: Number(row.total_won_count || 0),
+    totalLostCount: Number(row.total_lost_count || 0),
+    totalInaptoCount: Number(row.total_inapto_count || 0),
+    totalWonValueKW: Number(row.total_won_value_kw || 0),
+
+    ativosCount: ativos.length,                // << CORRIGIDO
+    atendimentosRealizados,                    // << CORRIGIDO
+    tempoMedioFechamentoHoras,
+    tempoMedioAtendimentoHoras,
+
+    conversionRate: row.total_leads > 0
+      ? Number(((row.total_won_count / row.total_leads) * 100).toFixed(2))
+      : 0,
+
+    taxaInapto: row.total_leads > 0
+      ? Number(((row.total_inapto_count / row.total_leads) * 100).toFixed(2))
+      : 0
+  };
+}
 
 async function getMotivosPerdaReport(filters = {}, userId = null, isAdmin = false) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
