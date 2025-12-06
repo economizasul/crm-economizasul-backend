@@ -4,6 +4,7 @@ const { format, subDays } = require('date-fns');
 
 /**
  * buildFilter(filters, userId, isAdmin)
+ * Agora usando created_at OU updated_at no período.
  */
 function buildFilter(filters = {}, userId = null, isAdmin = false) {
   const { startDate, endDate, ownerId, source } = filters || {};
@@ -18,7 +19,15 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
   const startTs = `${start} 00:00:00`;
   const endTs = `${end} 23:59:59`;
 
-  let where = `WHERE created_at >= $1 AND created_at <= $2`;
+  // 🔥 PRINCIPAL CORREÇÃO: considerar updated_at também
+  let where = `
+    WHERE (
+      (created_at >= $1 AND created_at <= $2)
+      OR
+      (updated_at >= $1 AND updated_at <= $2)
+    )
+  `;
+
   const values = [startTs, endTs];
   let idx = 3;
 
@@ -40,6 +49,9 @@ function buildFilter(filters = {}, userId = null, isAdmin = false) {
   return { whereClause: where, values };
 }
 
+/**
+ * Função principal para todos os gráficos
+ */
 async function getAllDashboardData(filters = {}, userId = null, isAdmin = false) {
   try {
     const [
@@ -71,7 +83,9 @@ async function getAllDashboardData(filters = {}, userId = null, isAdmin = false)
   }
 }
 
-// === AS DEMAIS FUNÇÕES ESTÃO PERFEITAS (mantidas intactas) ===
+/**
+ * EMBUDO DE ETAPAS
+ */
 async function getStageFunnel(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
   const q = `
@@ -89,6 +103,9 @@ async function getStageFunnel(filters, userId, isAdmin) {
   }));
 }
 
+/**
+ * ORIGENS DO FUNIL
+ */
 async function getOriginFunnel(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
   const q = `
@@ -106,6 +123,9 @@ async function getOriginFunnel(filters, userId, isAdmin) {
   return { arr, obj };
 }
 
+/**
+ * MOTIVOS DE PERDA
+ */
 async function getLostReasonsData(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
   const query = `
@@ -140,13 +160,24 @@ async function getLostReasonsData(filters, userId, isAdmin) {
   return { reasons: reasons.sort((a, b) => b.count - a.count), totalLost };
 }
 
+/**
+ * ATIVIDADE DIÁRIA
+ */
 async function getDailyActivity(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-  const q = `SELECT created_at::date AS activity_date, COUNT(*)::int AS leads_created FROM leads ${whereClause} GROUP BY created_at::date ORDER BY activity_date ASC`;
+  const q =
+    `SELECT created_at::date AS activity_date, COUNT(*)::int AS leads_created
+     FROM leads
+     ${whereClause}
+     GROUP BY created_at::date
+     ORDER BY activity_date ASC`;
   const r = await pool.query(q, values);
   return r.rows.map(row => ({ date: row.activity_date, count: Number(row.leads_created || 0) }));
 }
 
+/**
+ * MAPA DO PARANÁ (GANHOS)
+ */
 async function getMapLocations(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
   const q = `
@@ -171,43 +202,58 @@ async function getMapLocations(filters, userId, isAdmin) {
   }));
 }
 
+/**
+ * EXPORTAÇÃO
+ */
 async function getLeadsForExport(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
-  const q = `SELECT l.*, u.name AS owner_name FROM leads l LEFT JOIN users u ON u.id = l.owner_id ${whereClause} ORDER BY l.created_at DESC`;
+  const q =
+    `SELECT l.*, u.name AS owner_name
+     FROM leads l
+     LEFT JOIN users u ON u.id = l.owner_id
+     ${whereClause}
+     ORDER BY l.created_at DESC`;
   const r = await pool.query(q, values);
   return r.rows;
 }
 
 /**
- * getSummaryAndProductivity - VERSÃO CORRIGIDA E FINAL (05/12/2025)
+ * RESUMO + PRODUTIVIDADE
+ * *** VERSÃO FINAL COM TODAS AS CORREÇÕES ***
  */
 async function getSummaryAndProductivity(filters, userId, isAdmin) {
-  const { startDate, endDate } = filters;
-  const { whereClause, values } = buildFilter(filters, userId, isAdmin);
 
-  // -------------------------------------------
+  // Garantir datas sempre válidas
+  const startDate = filters.startDate || format(subDays(new Date(), 29), 'yyyy-MM-dd');
+  const endDate = filters.endDate || format(new Date(), 'yyyy-MM-dd');
+
+  const { whereClause, values } = buildFilter({ startDate, endDate, ...filters }, userId, isAdmin);
+
+  //---------------------------------------
   // 1) MÉTRICAS DIRETAS
-  // -------------------------------------------
+  //---------------------------------------
   const mainQuery = `
     SELECT
       COUNT(*) AS total_leads,
       SUM(CASE WHEN LOWER(status) = 'ganho' THEN 1 ELSE 0 END) AS total_won_count,
       SUM(CASE WHEN LOWER(status) = 'perdido' THEN 1 ELSE 0 END) AS total_lost_count,
       SUM(CASE WHEN LOWER(status) = 'inapto' THEN 1 ELSE 0 END) AS total_inapto_count,
-      SUM(CASE
-            WHEN LOWER(status) = 'ganho'
-             AND avg_consumption IS NOT NULL
-             AND TRIM(avg_consumption::text) <> ''
-            THEN NULLIF(TRIM(avg_consumption::text), '')::numeric
-            ELSE 0
-          END) AS total_won_value_kw
+      SUM(
+        CASE
+          WHEN LOWER(status) = 'ganho'
+           AND avg_consumption IS NOT NULL
+           AND TRIM(avg_consumption::text) <> ''
+          THEN NULLIF(TRIM(avg_consumption::text), '')::numeric
+          ELSE 0
+        END
+      ) AS total_won_value_kw
     FROM leads
     ${whereClause}
   `;
 
-  // -------------------------------------------
-  // 2) OBTÉM TODOS LEADS PARA CÁLCULOS NO JS
-  // -------------------------------------------
+  //---------------------------------------
+  // 2) LISTA DE LEADS PARA PROCESSAMENTO
+  //---------------------------------------
   const leadsQuery = `
     SELECT id, status, created_at, updated_at, notes
     FROM leads
@@ -222,21 +268,21 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
   const row = mainResult.rows[0] || {};
   const leads = leadsResult.rows || [];
 
-  // -------------------------------------------
-  // 3) CLASSIFICAÇÕES
-  // -------------------------------------------
+  //---------------------------------------
+  // 3) CLASSIFICAÇÃO
+  //---------------------------------------
   const ganhos = leads.filter(l => (l.status || '').toLowerCase() === 'ganho');
   const perdidos = leads.filter(l => (l.status || '').toLowerCase() === 'perdido');
   const inaptos = leads.filter(l => (l.status || '').toLowerCase() === 'inapto');
 
   const ativos = leads.filter(l => {
     const s = (l.status || '').toLowerCase();
-    return !['ganho','perdido','inapto'].includes(s);
+    return !['ganho', 'perdido', 'inapto'].includes(s);
   });
 
-  // -------------------------------------------
+  //---------------------------------------
   // 4) TEMPO MÉDIO EM HORAS
-  // -------------------------------------------
+  //---------------------------------------
   const calculateAvgHours = (items) => {
     const times = items
       .filter(l => l.created_at && l.updated_at)
@@ -247,69 +293,71 @@ async function getSummaryAndProductivity(filters, userId, isAdmin) {
       .filter(v => v !== null);
 
     if (times.length === 0) return 0;
-
-    return Number((times.reduce((a,b)=>a+b,0) / times.length).toFixed(2));
+    return Number((times.reduce((a, b) => a + b, 0) / times.length).toFixed(2));
   };
 
   const tempoMedioFechamentoHoras = calculateAvgHours(ganhos);
   const tempoMedioAtendimentoHoras = calculateAvgHours(ativos);
 
-// -------------------------------------------
-// 5) ATENDIMENTOS REALIZADOS (Notas no período)
-// -------------------------------------------
-const atendimentosRealizados = leads.reduce((count, lead) => {
-  if (!lead.notes || !lead.notes.trim()) return count;
-
-  let notesArray = [];
-  try {
-    notesArray = JSON.parse(lead.notes); // << CORRETO: notas são JSON válido
-  } catch (err) {
-    console.error("Erro ao fazer parse do JSON de notes:", err);
-    return count;
-  }
-
-  const start = new Date(startDate);
+  //---------------------------------------
+  // 5) ATENDIMENTOS REALIZADOS (NOTAS)
+  //---------------------------------------
+  const start = new Date(startDate + "T00:00:00");
   const end = new Date(endDate + "T23:59:59");
 
-  notesArray.forEach(nota => {
-    if (!nota.timestamp) return;
+  const atendimentosRealizados = leads.reduce((count, lead) => {
+    if (!lead.notes || !lead.notes.trim()) return count;
 
-    const ts = Number(nota.timestamp);
-    const dt = new Date(ts);
-
-    if (dt >= start && dt <= end) {
-      count++;
+    let notesArray = [];
+    try {
+      notesArray = JSON.parse(lead.notes);
+    } catch (err) {
+      console.error("Erro ao parsear notes JSON:", err);
+      return count;
     }
-  });
 
-  return count;
-}, 0);
+    notesArray.forEach(nota => {
+      if (!nota.timestamp) return;
+      const dt = new Date(Number(nota.timestamp));
+      if (dt >= start && dt <= end) count++;
+    });
 
-  // -------------------------------------------
+    return count;
+  }, 0);
+
+  //---------------------------------------
   // 6) RETORNO FINAL
-  // -------------------------------------------
+  //---------------------------------------
+  const totalLeads = Number(row.total_leads || 0);
+  const totalWon = Number(row.total_won_count || 0);
+  const totalInapto = Number(row.total_inapto_count || 0);
+
   return {
-    totalLeads: Number(row.total_leads || 0),
-    totalWonCount: Number(row.total_won_count || 0),
+    totalLeads,
+    totalWonCount: totalWon,
     totalLostCount: Number(row.total_lost_count || 0),
-    totalInaptoCount: Number(row.total_inapto_count || 0),
+    totalInaptoCount: totalInapto,
     totalWonValueKW: Number(row.total_won_value_kw || 0),
 
-    ativosCount: ativos.length,                // << CORRIGIDO
-    atendimentosRealizados,                    // << CORRIGIDO
+    ativosCount: ativos.length,
+    atendimentosRealizados,
+
     tempoMedioFechamentoHoras,
     tempoMedioAtendimentoHoras,
 
-    conversionRate: row.total_leads > 0
-      ? Number(((row.total_won_count / row.total_leads) * 100).toFixed(2))
+    conversionRate: totalLeads > 0
+      ? Number(((totalWon / totalLeads) * 100).toFixed(2))
       : 0,
 
-    taxaInapto: row.total_leads > 0
-      ? Number(((row.total_inapto_count / row.total_leads) * 100).toFixed(2))
+    taxaInapto: totalLeads > 0
+      ? Number(((totalInapto / totalLeads) * 100).toFixed(2))
       : 0
   };
 }
 
+/**
+ * MOTIVOS DE PERDA RELATÓRIO
+ */
 async function getMotivosPerdaReport(filters = {}, userId = null, isAdmin = false) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
   const q = `
