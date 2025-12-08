@@ -111,20 +111,62 @@ async function getStageFunnel(filters, userId, isAdmin) {
 ----------------------------------------------------- */
 async function getOriginFunnel(filters, userId, isAdmin) {
   const { whereClause, values } = buildFilter(filters, userId, isAdmin);
+
   const q = `
-    SELECT COALESCE(NULLIF(TRIM(origin), ''), 'Não informado') AS origin_name,
+    SELECT COALESCE(NULLIF(TRIM(origin), ''), 'Não informado') AS origin_raw,
            COUNT(*)::int AS count
     FROM leads
     ${whereClause}
-    GROUP BY origin_name
+    GROUP BY origin_raw
     ORDER BY count DESC
   `;
+
   const r = await pool.query(q, values);
-  const arr = r.rows.map(rw => ({ origin: rw.origin_name, count: Number(rw.count || 0) }));
+  const rows = r.rows || [];
+
+  // Função auxiliar: normaliza texto (minusculas, sem acento)
+  const normalize = (str) => {
+    if (!str && str !== '') return '';
+    return String(str)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '') // remove acentos
+      .trim();
+  };
+
+  // Mapeamento heurístico de variantes para as chaves que o frontend espera
+  const mapToKey = (raw) => {
+    const n = normalize(raw);
+
+    if (!n || n === 'nao informado' || n === 'não informado') return 'outro';
+    if (n.includes('facebook') || n.includes('fb') || n.includes('face')) return 'facebook';
+    if (n.includes('instagram') || n.includes('insta')) return 'instagram';
+    if (n.includes('google')) return 'google';
+    if (n.includes('indic') || n.includes('indicacao') || n.includes('indicação')) return 'indicacao';
+    if (n.includes('parceria') || n.includes('parceir')) return 'parceria';
+    if (n.includes('org') || n.includes('organico') || n.includes('orgânico')) return 'organico';
+    // Pode adicionar mais regras conforme seus dados reais...
+    return 'outro';
+  };
+
+  // Inicializa objeto com todas as chaves esperadas (garante zeros)
+  const keys = ['organico', 'indicacao', 'facebook', 'google', 'instagram', 'parceria', 'outro'];
   const obj = {};
-  arr.forEach(it => { obj[it.origin] = it.count; });
+  keys.forEach(k => { obj[k] = 0; });
+
+  // Popula acumulando por chave mapeada
+  rows.forEach(rw => {
+    const raw = rw.origin_raw || '';
+    const mapped = mapToKey(raw);
+    obj[mapped] = (obj[mapped] || 0) + Number(rw.count || 0);
+  });
+
+  // Também monta array (opcional — para compatibilidade)
+  const arr = keys.map(k => ({ origin: k, count: obj[k] }));
+
   return { arr, obj };
 }
+
 
 /* -----------------------------------------------------
    getLostReasonsData
