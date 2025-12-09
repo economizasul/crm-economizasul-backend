@@ -393,10 +393,6 @@ async createLead(req, res) {
     }
   }
 }
-// =======================================
-// MÉTODOS DE NOTAS (NOVO BLOCO)
-// =======================================
-const { pool } = require('../config/db');
 
 // Buscar todas as notas de um lead
 LeadController.getNotesByLead = async (req, res) => {
