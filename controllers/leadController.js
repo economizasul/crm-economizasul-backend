@@ -438,4 +438,10 @@ LeadController.addNote = async (req, res) => {
 };
 
 
-module.exports = new LeadController();
+const controller = new LeadController();
+
+module.exports = {
+  ...controller,
+  getNotesByLead: LeadController.getNotesByLead,
+  addNote: LeadController.addNote,
+};
