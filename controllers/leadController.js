@@ -398,42 +398,89 @@ async createLead(req, res) {
 LeadController.getNotesByLead = async (req, res) => {
   const { id } = req.params;
   try {
-    const query = `
-      SELECT n.*, u.name AS user_name
-      FROM notes n
-      LEFT JOIN users u ON n.user_id = u.id
-      WHERE n.lead_id = $1
-      ORDER BY n.created_at DESC;
-    `;
-    const result = await pool.query(query, [id]);
-    res.json(result.rows);
+    const result = await pool.query('SELECT notes FROM leads WHERE id = $1', [id]);
+
+    if (result.rowCount === 0) {
+      return res.status(404).json({ error: 'Lead não encontrado.' });
+    }
+
+    let notes = [];
+    const stored = result.rows[0].notes;
+
+    if (stored) {
+      try {
+        notes = typeof stored === 'string' ? JSON.parse(stored) : stored;
+      } catch (e) {
+        console.warn('⚠️ Erro ao interpretar JSON de notas:', e);
+        notes = [];
+      }
+    }
+
+    // Ordena por timestamp mais recente
+    notes.sort((a, b) => (b.timestamp || 0) - (a.timestamp || 0));
+
+    res.json(notes);
   } catch (error) {
     console.error('Erro ao buscar notas:', error);
-    res.status(500).json({ error: 'Erro ao buscar notas.' });
+    res.status(500).json({ error: 'Erro ao buscar notas.', details: error.message });
   }
 };
+
 
 // Adicionar nova nota
 LeadController.addNote = async (req, res) => {
   const { id } = req.params; // lead_id
-  const { content, type } = req.body;
-  const userId = req.user?.id || 1; // pega do token, ou usa 1 como fallback
+  const { content } = req.body;
+  const userId = req.user?.id || 1;
+  const userName = req.user?.name || 'Usuário';
 
   if (!content || !content.trim()) {
     return res.status(400).json({ error: 'Conteúdo da nota é obrigatório.' });
   }
 
   try {
-    const query = `
-      INSERT INTO notes (lead_id, user_id, type, content, created_at)
-      VALUES ($1, $2, $3, $4, NOW())
-      RETURNING *;
-    `;
-    const result = await pool.query(query, [id, userId, type || 'Nota', content.trim()]);
-    res.status(201).json(result.rows[0]);
+    // 1️⃣ Busca lead atual
+    const leadResult = await pool.query('SELECT notes FROM leads WHERE id = $1', [id]);
+    if (leadResult.rowCount === 0) {
+      return res.status(404).json({ error: 'Lead não encontrado.' });
+    }
+
+    // 2️⃣ Converte notas existentes
+    let notes = [];
+    const currentNotes = leadResult.rows[0].notes;
+
+    if (currentNotes) {
+      try {
+        notes = typeof currentNotes === 'string' ? JSON.parse(currentNotes) : currentNotes;
+      } catch (e) {
+        console.warn('⚠️ Erro ao interpretar JSON de notas:', e);
+        notes = [];
+      }
+    }
+
+    // 3️⃣ Adiciona nova nota ao array
+    const newNote = {
+      text: content.trim(),
+      timestamp: Date.now(),
+      user: userName
+    };
+    notes.push(newNote);
+
+    // 4️⃣ Atualiza no banco (salva JSON atualizado)
+    await pool.query('UPDATE leads SET notes = $1, updated_at = NOW() WHERE id = $2', [
+      JSON.stringify(notes),
+      id
+    ]);
+
+    // 5️⃣ Retorna sucesso e nova lista de notas
+    res.status(201).json({
+      message: 'Nota adicionada com sucesso.',
+      notes
+    });
+
   } catch (error) {
     console.error('Erro ao adicionar nota:', error);
-    res.status(500).json({ error: 'Erro ao salvar nota.' });
+    res.status(500).json({ error: 'Erro ao salvar nota.', details: error.message });
   }
 };
 
