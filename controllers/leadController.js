@@ -1,6 +1,6 @@
 // controllers/leadController.js
 const { pool } = require('../config/db');
-//const Lead = require('../models/Lead');
+const Lead = require('../models/Lead');
 
 class LeadController {
   constructor() {
