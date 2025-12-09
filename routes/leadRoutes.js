@@ -22,4 +22,7 @@ router.route('/users/reassignment')
 router.route('/:id/reassign')
   .put(LeadController.reassignLead);
 
+router.get('/:id/notes', LeadController.getNotesByLead);
+router.post('/:id/notes', LeadController.addNote);
+
 module.exports = router;

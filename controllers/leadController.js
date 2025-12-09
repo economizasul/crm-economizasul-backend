@@ -1,4 +1,4 @@
-// controllers/leadController.js - Verificação de Commit...
+// controllers/leadController.js
 const { pool } = require('../config/db');
 const Lead = require('../models/Lead');
 
@@ -393,5 +393,53 @@ async createLead(req, res) {
     }
   }
 }
+// =======================================
+// MÉTODOS DE NOTAS (NOVO BLOCO)
+// =======================================
+const { pool } = require('../config/db');
+
+// Buscar todas as notas de um lead
+LeadController.getNotesByLead = async (req, res) => {
+  const { id } = req.params;
+  try {
+    const query = `
+      SELECT n.*, u.name AS user_name
+      FROM notes n
+      LEFT JOIN users u ON n.user_id = u.id
+      WHERE n.lead_id = $1
+      ORDER BY n.created_at DESC;
+    `;
+    const result = await pool.query(query, [id]);
+    res.json(result.rows);
+  } catch (error) {
+    console.error('Erro ao buscar notas:', error);
+    res.status(500).json({ error: 'Erro ao buscar notas.' });
+  }
+};
+
+// Adicionar nova nota
+LeadController.addNote = async (req, res) => {
+  const { id } = req.params; // lead_id
+  const { content, type } = req.body;
+  const userId = req.user?.id || 1; // pega do token, ou usa 1 como fallback
+
+  if (!content || !content.trim()) {
+    return res.status(400).json({ error: 'Conteúdo da nota é obrigatório.' });
+  }
+
+  try {
+    const query = `
+      INSERT INTO notes (lead_id, user_id, type, content, created_at)
+      VALUES ($1, $2, $3, $4, NOW())
+      RETURNING *;
+    `;
+    const result = await pool.query(query, [id, userId, type || 'Nota', content.trim()]);
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Erro ao adicionar nota:', error);
+    res.status(500).json({ error: 'Erro ao salvar nota.' });
+  }
+};
+
 
 module.exports = new LeadController();

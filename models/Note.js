@@ -1,7 +1,10 @@
 // models/Note.js
-const { pool } = require('../db');
+const { pool } = require('../config/db');
 
 class Note {
+    // ==========================================================
+    // Criação automática da tabela se não existir
+    // ==========================================================
     static async createTable() {
         const query = `
             CREATE TABLE IF NOT EXISTS notes (
@@ -12,21 +15,23 @@ class Note {
                 content TEXT NOT NULL,
                 created_at TIMESTAMP WITHOUT TIME ZONE DEFAULT CURRENT_TIMESTAMP
             );
-            -- Índice para buscas rápidas por lead
+
+            -- Índices para performance
             CREATE INDEX IF NOT EXISTS notes_lead_id_idx ON notes (lead_id);
-            -- Índice para buscas rápidas por vendedor
             CREATE INDEX IF NOT EXISTS notes_user_id_idx ON notes (user_id);
         `;
         try {
             await pool.query(query);
-            console.log("Tabela 'notes' verificada/criada com sucesso.");
+            console.log("✅ Tabela 'notes' verificada/criada com sucesso.");
         } catch (error) {
-            console.error("Erro ao criar tabela 'notes':", error);
+            console.error("❌ Erro ao criar tabela 'notes':", error);
             throw error;
         }
     }
 
-    // Método para buscar todas as notas de um lead específico
+    // ==========================================================
+    // Buscar todas as notas de um lead
+    // ==========================================================
     static async findByLeadId(leadId) {
         const query = `
             SELECT 
@@ -44,6 +49,24 @@ class Note {
             return result.rows;
         } catch (error) {
             console.error('Erro ao buscar notas por Lead ID:', error);
+            throw error;
+        }
+    }
+
+    // ==========================================================
+    // Criar nova nota vinculada a um lead
+    // ==========================================================
+    static async create({ lead_id, user_id, type, content }) {
+        const query = `
+            INSERT INTO notes (lead_id, user_id, type, content)
+            VALUES ($1, $2, $3, $4)
+            RETURNING *;
+        `;
+        try {
+            const result = await pool.query(query, [lead_id, user_id, type, content]);
+            return result.rows[0];
+        } catch (error) {
+            console.error('Erro ao criar nota:', error);
             throw error;
         }
     }
