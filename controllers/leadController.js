@@ -73,55 +73,59 @@ async createLead(req, res) {
     const {
       name, email, phone, document, address, status, origin,
       uc, avg_consumption, estimated_savings, qsa, owner_id: bodyOwnerId,
-      // 🟢 CAMPOS NOVOS
       kw_sold, metadata, reason_for_loss, seller_id, seller_name,
     } = req.body;
 
+    // Compatibilidade com camelCase (frontend)
+    const avgCons = avg_consumption ?? req.body.avgConsumption;
+    const estSavings = estimated_savings ?? req.body.estimatedSavings;
+
     const finalOwnerId = bodyOwnerId || req.user.id;
-    // Validações básicas
+
+    // 🔸 Validações básicas
     if (!name?.trim()) return res.status(400).json({ error: 'Nome é obrigatório.' });
     if (!phone?.replace(/\D/g, '')?.trim()) return res.status(400).json({ error: 'Telefone é obrigatório.' });
-    if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });  
+    if (!origin?.trim()) return res.status(400).json({ error: 'Origem é obrigatória.' });
+
     const cleanPhone = phone.replace(/\D/g, '');
     if (cleanPhone.length < 10 || cleanPhone.length > 11) {
       return res.status(400).json({ error: 'Telefone deve ter 10 ou 11 dígitos.' });
-    } 
+    }
+
     // 📝 Nota inicial
     const initialNote = {
       text: `Lead criado por ${req.user.name || 'Usuário'} via formulário (Origem: ${origin.trim()})`,
       timestamp: Date.now(),
       user: req.user.name || 'Sistema'
     };
+
     // ============================================================
     // GEOCODIFICAÇÃO — SÓ FAZ SE O FRONT NÃO ENVIAR lat/lng
     // ============================================================
     let lat = req.body.lat ? parseFloat(req.body.lat) : null;
-    let lng = req.body.lng ? parseFloat(req.body.lng) : null; 
+    let lng = req.body.lng ? parseFloat(req.body.lng) : null;
     let cidade = req.body.cidade || null;
     let regiao = req.body.regiao || null;
-    let google_maps_link = req.body.google_maps_link || null; 
-    // Se lat/lng vierem vazios, null, "", undefined ou NaN → geocodifica
+    let google_maps_link = req.body.google_maps_link || null;
+
     if ((!lat || !lng || isNaN(lat) || isNaN(lng)) || !cidade || !regiao) {
-    try {
-    const fetch = (await import("node-fetch")).default;
-    const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
-    const geoResp = await fetch(url, {
-      headers: { "User-Agent": "economizasul-crm/1.0" }
-    });
-    const data = await geoResp.json();
-    if (data && data.length > 0) {
-      lat = lat || parseFloat(data[0].lat);
-      lng = lng || parseFloat(data[0].lon); 
-      const addr = data[0].address || {};
-      cidade = cidade || addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
-      regiao = regiao || addr.state || addr.region || addr.state_district || null;
-      // ⚠️ CORREÇÃO: Link correto para Google Maps
-      google_maps_link = `https://maps.google.com/?q=${lat},${lng}`; 
+      try {
+        const fetch = (await import("node-fetch")).default;
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(address)}`;
+        const geoResp = await fetch(url, { headers: { "User-Agent": "economizasul-crm/1.0" } });
+        const data = await geoResp.json();
+        if (data && data.length > 0) {
+          lat = lat || parseFloat(data[0].lat);
+          lng = lng || parseFloat(data[0].lon);
+          const addr = data[0].address || {};
+          cidade = cidade || addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
+          regiao = regiao || addr.state || addr.region || addr.state_district || null;
+          google_maps_link = `https://maps.google.com/?q=${lat},${lng}`;
+        }
+      } catch (e) {
+        console.error("❌ Erro ao geocodificar endereço:", e);
+      }
     }
-  } catch (e) {
-    console.error("❌ Erro ao geocodificar endereço:", e);
-  }
-}
 
     // ============================================================
     // MONTA PAYLOAD FINAL PARA INSERÇÃO
@@ -136,16 +140,15 @@ async createLead(req, res) {
       origin: origin.trim(),
       owner_id: finalOwnerId,
       uc: uc?.trim() || null,
-      avg_consumption: avg_consumption ? parseFloat(avg_consumption) : null,
-      estimated_savings: estimated_savings ? parseFloat(estimated_savings) : null,
+      avg_consumption: avgCons ? parseFloat(avgCons) : null,
+      estimated_savings: estSavings ? parseFloat(estSavings) : null,
       qsa: qsa?.trim() || null,
-      notes: JSON.stringify([initialNote]), 
+      notes: JSON.stringify([initialNote]),
       lat,
       lng,
       cidade,
-      regiao, 
-      google_maps_link, 
-      // 🟢 CAMPOS NOVOS: prioriza body, senão usa padrão
+      regiao,
+      google_maps_link,
       kw_sold: kw_sold ? parseFloat(kw_sold) : 0,
       metadata: metadata || {},
       reason_for_loss: reason_for_loss || null,
@@ -164,7 +167,8 @@ async createLead(req, res) {
     console.error("Erro ao criar lead:", error);
     res.status(500).json({ error: "Erro interno do servidor.", details: error.message });
   }
-  }
+}
+
 
   /** 🔹 Retorna lista de leads conforme permissão do usuário */
   async getLeads(req, res) {
@@ -210,11 +214,14 @@ async createLead(req, res) {
       kw_sold, metadata, reason_for_loss, seller_id, seller_name,
     } = req.body;
 
+    // 🟢 Compatibilidade com camelCase (frontend)
+    const avgCons = avg_consumption ?? req.body.avgConsumption;
+    const estSavings = estimated_savings ?? req.body.estimatedSavings;
+
     try {
       const existingLead = await Lead.findById(id);
       if (!existingLead) return res.status(404).json({ error: 'Lead não encontrado.' });
 
-      // 🔒 Permissões: Admin pode tudo; user apenas se for dono.
       const isOwner = Number(existingLead.owner_id) === Number(req.user.id);
       const isAdmin = req.user.role === 'Admin';
       if (!isOwner && !isAdmin) {
@@ -230,68 +237,60 @@ async createLead(req, res) {
         status: status || existingLead.status,
         origin: origin?.trim() || existingLead.origin,
         uc: uc?.trim() || existingLead.uc,
-        avg_consumption: avg_consumption !== undefined
-          ? (avg_consumption ? parseFloat(avg_consumption) : null)
+        avg_consumption: avgCons !== undefined
+          ? (avgCons ? parseFloat(avgCons) : null)
           : existingLead.avg_consumption,
-        estimated_savings: estimated_savings !== undefined
-          ? (estimated_savings ? parseFloat(estimated_savings) : null)
+        estimated_savings: estSavings !== undefined
+          ? (estSavings ? parseFloat(estSavings) : null)
           : existingLead.estimated_savings,
         qsa: qsa?.trim() || existingLead.qsa,
       };
 
-      // 🔹 Lógica de Geocodificação para atualização (🟢 CORRIGIDO/ADICIONADO)
+      // 🔹 Lógica de Geocodificação (mantida)
       let lat = req.body.lat !== undefined ? parseFloat(req.body.lat) : existingLead.lat;
       let lng = req.body.lng !== undefined ? parseFloat(req.body.lng) : existingLead.lng;
       let cidade = req.body.cidade || existingLead.cidade;
       let regiao = req.body.regiao || existingLead.regiao;
       let google_maps_link = req.body.google_maps_link || existingLead.google_maps_link;
-      
+
       const addressUpdated = address?.trim() && address?.trim() !== existingLead.address;
 
-      // Se o endereço foi atualizado E o front não enviou a nova geolocalização, geocodifica
       if (addressUpdated && updates.address && (!req.body.lat || !req.body.lng || isNaN(lat) || isNaN(lng))) {
-          try {
-              const fetch = (await import("node-fetch")).default;
-              const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(updates.address)}`;
-              const geoResp = await fetch(url, {
-                  headers: { "User-Agent": "economizasul-crm/1.0" }
-              });
-              const data = await geoResp.json();
+        try {
+          const fetch = (await import("node-fetch")).default;
+          const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(updates.address)}`;
+          const geoResp = await fetch(url, { headers: { "User-Agent": "economizasul-crm/1.0" } });
+          const data = await geoResp.json();
 
-              if (data && data.length > 0) {
-                  lat = parseFloat(data[0].lat);
-                  lng = parseFloat(data[0].lon);
-                  const addr = data[0].address || {};
-                  cidade = addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
-                  regiao = addr.state || addr.region || addr.state_district || null;
-                  // ⚠️ CORREÇÃO: Link correto para Google Maps
-                  google_maps_link = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
-              }
-          } catch (e) {
-              console.error("❌ Erro ao re-geocodificar endereço durante update:", e);
+          if (data && data.length > 0) {
+            lat = parseFloat(data[0].lat);
+            lng = parseFloat(data[0].lon);
+            const addr = data[0].address || {};
+            cidade = addr.city || addr.town || addr.village || addr.municipality || addr.county || null;
+            regiao = addr.state || addr.region || addr.state_district || null;
+            google_maps_link = `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
           }
+        } catch (e) {
+          console.error("❌ Erro ao re-geocodificar endereço durante update:", e);
+        }
       }
 
-      // Aplica os valores de GEO (se vieram do body ou da geocodificação)
       updates.lat = lat;
       updates.lng = lng;
       updates.cidade = cidade;
       updates.regiao = regiao;
       updates.google_maps_link = google_maps_link;
-      
-      // 🟢 Adiciona novos campos (Venda/Perda)
+
       if (kw_sold !== undefined) updates.kw_sold = kw_sold ? parseFloat(kw_sold) : 0;
       if (metadata !== undefined) updates.metadata = metadata;
       if (reason_for_loss !== undefined) updates.reason_for_loss = reason_for_loss?.trim() || null;
       if (seller_id !== undefined) updates.seller_id = seller_id || null;
       if (seller_name !== undefined) updates.seller_name = seller_name?.trim() || null;
 
-      // ✅ Admin pode transferir titularidade
       if (isAdmin && owner_id !== undefined) {
-        updates.owner_id = parseInt(owner_id, 10);
+        updates.owner_id = parseInt(owner_id, 10);
       }
 
-      // 🟢 Adiciona nova nota (histórico)
       if (newNote?.text?.trim()) {
         let notes = [];
         try {
@@ -309,10 +308,9 @@ async createLead(req, res) {
         updates.notes = JSON.stringify(notes);
       }
 
-      // 📝 Atualiza no banco
       await Lead.update(id, updates);
-
       const updatedLead = await Lead.findById(id);
+
       res.status(200).json({
         message: 'Lead atualizado com sucesso!',
         lead: this.formatLeadResponse(updatedLead)
@@ -323,6 +321,7 @@ async createLead(req, res) {
       res.status(500).json({ error: 'Erro ao salvar lead.', details: error.message });
     }
   }
+
 
   /** 🔹 Exclusão de lead */
   async deleteLead(req, res) {
