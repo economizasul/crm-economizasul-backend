@@ -46,10 +46,17 @@ formatLeadResponse(lead) {
         ownerName: lead.owner_name || 'Desconhecido',
         uc: lead.uc || null,
 
-        // ⚡ Aqui convertemos corretamente:
+        // 🔥 RETORNO DUPLO — para garantir compatibilidade com frontend atual
+        avg_consumption: lead.avg_consumption ?? null,
+        estimated_savings: lead.estimated_savings ?? null,
+
+        // 🔥 Mantém também camelCase para manter compatibilidade futura
         avgConsumption: lead.avg_consumption ?? null,
         estimatedSavings: lead.estimated_savings ?? null,
+
+        kw_sold: lead.kw_sold ?? 0,
         kwSold: lead.kw_sold ?? 0,
+
 
         qsa: lead.qsa || null,
         notes: notesArray,
