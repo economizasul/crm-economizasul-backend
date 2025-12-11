@@ -17,54 +17,63 @@ class LeadController {
 formatLeadResponse(lead) {
     let notesArray = [];
 
-  if (lead.notes) {
-    try {
-      const parsed = JSON.parse(lead.notes);
-      if (Array.isArray(parsed)) {
-        notesArray = parsed.filter(note => note && note.text);
-      }
-    } catch (e) {
-      notesArray = [{
-        text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
-        timestamp: Date.now(),
-        user: 'Sistema'
-      }];
+    if (lead.notes) {
+        try {
+            const parsed = JSON.parse(lead.notes);
+            if (Array.isArray(parsed)) {
+                notesArray = parsed.filter(note => note && note.text);
+            }
+        } catch (e) {
+            notesArray = [{
+                text: typeof lead.notes === 'string' ? lead.notes : 'Nota corrompida',
+                timestamp: Date.now(),
+                user: 'Sistema'
+            }];
+        }
     }
-  }
 
-  return {
-    _id: lead.id,
-    id: lead.id,
-    name: lead.name || 'Sem nome',
-    email: lead.email || null,
-    phone: lead.phone,
-    document: lead.document || null,
-    address: lead.address || null,
-    status: lead.status || 'Novo',
-    origin: lead.origin || 'Manual',
-    ownerId: lead.owner_id,
-    ownerName: lead.owner_name || 'Desconhecido',
-    uc: lead.uc || null,
-    avgConsumption: lead.avg_consumption || null,
-    estimatedSavings: lead.estimated_savings || null,
-    qsa: lead.qsa || null,
-    notes: notesArray,  
-    // 🟢 CAMPOS NOVOS (GEO)
-    lat: lead.lat || null,
-    lng: lead.lng || null,
-    google_maps_link: lead.google_maps_link || null,
-    cidade: lead.cidade || null,
-    regiao: lead.regiao || null,
-    // 📊 CAMPOS NOVOS (VENDA/PERDA)
-    kwSold: lead.kw_sold || 0,
-    reasonForLoss: lead.reason_for_loss || null,
-    sellerId: lead.seller_id || null,
-    sellerName: lead.seller_name || null,
-    metadata: lead.metadata || {},
-    createdAt: lead.created_at,
-    updatedAt: lead.updated_at,
-  };
+    const response = {
+        _id: lead.id,
+        id: lead.id,
+        name: lead.name || 'Sem nome',
+        email: lead.email || null,
+        phone: lead.phone,
+        document: lead.document || null,
+        address: lead.address || null,
+        status: lead.status || 'Novo',
+        origin: lead.origin || 'Manual',
+        ownerId: lead.owner_id,
+        ownerName: lead.owner_name || 'Desconhecido',
+        uc: lead.uc || null,
+
+        // ⚡ Aqui convertemos corretamente:
+        avgConsumption: lead.avg_consumption ?? null,
+        estimatedSavings: lead.estimated_savings ?? null,
+        kwSold: lead.kw_sold ?? 0,
+
+        qsa: lead.qsa || null,
+        notes: notesArray,
+
+        // GEO
+        lat: lead.lat || null,
+        lng: lead.lng || null,
+        googleMapsLink: lead.google_maps_link || null,
+        cidade: lead.cidade || null,
+        regiao: lead.regiao || null,
+
+        // VENDA
+        reasonForLoss: lead.reason_for_loss || null,
+        sellerId: lead.seller_id || null,
+        sellerName: lead.seller_name || null,
+
+        metadata: lead.metadata || {},
+        createdAt: lead.created_at,
+        updatedAt: lead.updated_at,
+    };
+
+    return response;
 }
+
 
 
 /** 🔹 Criação de Lead com geocodificação (BACKEND) */
