@@ -86,33 +86,77 @@ const Lead = {
   },
 
   async insert(payload) {
-    /* 🟢 Adicionado 'phone2' aos campos para INSERT */
+    if (!payload || typeof payload !== 'object') return null;
+
+    // 🔄 Converte camelCase → snake_case para compatibilidade com o banco
+    const mapping = {
+      avgConsumption: 'avg_consumption',
+      estimatedSavings: 'estimated_savings',
+      reasonForLoss: 'reason_for_loss',
+      sellerId: 'seller_id',
+      sellerName: 'seller_name',
+      ownerId: 'owner_id',
+      kwSold: 'kw_sold',
+      googleMapsLink: 'google_maps_link',
+    };
+
+    const normalizedPayload = {};
+    for (const [key, value] of Object.entries(payload)) {
+      const dbKey = mapping[key] || key;
+      normalizedPayload[dbKey] = value;
+    }
+
+    // 🧩 Lista dos campos válidos existentes na tabela
     const fields = [
-      'name','email','phone','phone2','document','address','status','origin','owner_id',
-      'uc','avg_consumption','estimated_savings','qsa','notes',
-      'lat','lng','cidade','regiao','google_maps_link',
-      'kw_sold','metadata','reason_for_loss','seller_id','seller_name'
+      'name', 'email', 'phone', 'phone2', 'document', 'address',
+      'status', 'origin', 'owner_id', 'uc',
+      'avg_consumption', 'estimated_savings', 'qsa', 'notes',
+      'lat', 'lng', 'cidade', 'regiao', 'google_maps_link',
+      'kw_sold', 'metadata', 'reason_for_loss', 'seller_id', 'seller_name'
     ];
 
-    const vals = fields.map(f => payload[f] ?? null);
-    const placeholders = vals.map((_, i) => `$${i + 1}`).join(',');
+    const filteredFields = fields.filter(f => f in normalizedPayload);
+    const values = filteredFields.map(f => normalizedPayload[f] ?? null);
+    const placeholders = values.map((_, i) => `$${i + 1}`).join(',');
 
     const query = `
-      INSERT INTO leads (${fields.join(',')})
+      INSERT INTO leads (${filteredFields.join(',')})
       VALUES (${placeholders})
       RETURNING *;
     `;
 
-    const { rows } = await pool.query(query, vals);
+    const { rows } = await pool.query(query, values);
     return rows[0];
   },
 
+
   async update(id, payload) {
-    const fields = Object.keys(payload);
+    if (!payload || typeof payload !== 'object') return null;
+
+    // 🔄 Converte camelCase → snake_case para compatibilidade com o banco
+    const mapping = {
+      avgConsumption: 'avg_consumption',
+      estimatedSavings: 'estimated_savings',
+      reasonForLoss: 'reason_for_loss',
+      sellerId: 'seller_id',
+      sellerName: 'seller_name',
+      ownerId: 'owner_id',
+      kwSold: 'kw_sold',
+      googleMapsLink: 'google_maps_link',
+    };
+
+    const normalizedPayload = {};
+    for (const [key, value] of Object.entries(payload)) {
+      const dbKey = mapping[key] || key;
+      normalizedPayload[dbKey] = value;
+    }
+
+    // 🧩 Gera dinamicamente os campos para o UPDATE
+    const fields = Object.keys(normalizedPayload);
     if (!fields.length) return null;
 
     const setExpressions = fields.map((key, i) => `${key} = $${i + 1}`);
-    const values = Object.values(payload);
+    const values = Object.values(normalizedPayload);
 
     const query = `
       UPDATE leads
@@ -124,6 +168,7 @@ const Lead = {
     const { rows } = await pool.query(query, [...values, id]);
     return rows[0] || null;
   },
+
 
   async delete(id) {
     await pool.query('DELETE FROM leads WHERE id = $1', [id]);
