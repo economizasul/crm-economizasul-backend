@@ -85,7 +85,10 @@ const Lead = {
     return rows;
   },
 
+  // 🟢🟢🟢 LOG AQUI — ANTES DO INSERT
   async insert(payload) {
+    console.log("📥 PAYLOAD RECEBIDO NO INSERT:", payload);
+
     if (!payload || typeof payload !== 'object') return null;
 
     // 🔄 Converte camelCase → snake_case para compatibilidade com o banco
@@ -129,8 +132,10 @@ const Lead = {
     return rows[0];
   },
 
-
+  // 🟢🟢🟢 LOG AQUI — ANTES DO UPDATE
   async update(id, payload) {
+    console.log("📥 PAYLOAD RECEBIDO NO UPDATE:", payload);
+
     if (!payload || typeof payload !== 'object') return null;
 
     // 🔄 Converte camelCase → snake_case para compatibilidade com o banco
@@ -168,7 +173,6 @@ const Lead = {
     const { rows } = await pool.query(query, [...values, id]);
     return rows[0] || null;
   },
-
 
   async delete(id) {
     await pool.query('DELETE FROM leads WHERE id = $1', [id]);
