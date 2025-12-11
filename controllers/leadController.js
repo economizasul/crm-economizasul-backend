@@ -237,14 +237,21 @@ async createLead(req, res) {
         status: status || existingLead.status,
         origin: origin?.trim() || existingLead.origin,
         uc: uc?.trim() || existingLead.uc,
-        avg_consumption: avgCons !== undefined
-          ? (avgCons ? parseFloat(avgCons) : null)
-          : existingLead.avg_consumption,
-        estimated_savings: estSavings !== undefined
-          ? (estSavings ? parseFloat(estSavings) : null)
-          : existingLead.estimated_savings,
+        avg_consumption:
+          avgCons !== undefined
+            ? (avgCons === "" || avgCons === null ? null : parseFloat(avgCons))
+            : existingLead.avg_consumption,
+
+        estimated_savings:
+          estSavings !== undefined
+            ? (estSavings === "" || estSavings === null ? null : parseFloat(estSavings))
+            : existingLead.estimated_savings,
+
         qsa: qsa?.trim() || existingLead.qsa,
       };
+
+      updates.avg_consumption = updates.avg_consumption ?? null;
+      updates.estimated_savings = updates.estimated_savings ?? null;
 
       // 🔹 Lógica de Geocodificação (mantida)
       let lat = req.body.lat !== undefined ? parseFloat(req.body.lat) : existingLead.lat;
