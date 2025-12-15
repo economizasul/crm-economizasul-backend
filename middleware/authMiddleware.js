@@ -1,7 +1,8 @@
 // middleware/authMiddleware.js
 
 const jwt = require('jsonwebtoken');
-const pool = require('../db');
+const { pool } = require('../config/db');
+
 
 // =============================================================
 // FUNÇÃO AUXILIAR: Buscar usuário por ID

@@ -1,5 +1,5 @@
 // services/ReportDataService.js
-const pool = require('../db');
+const { pool } = require('../config/db');
 const { format, subDays } = require('date-fns');
 
 /* -----------------------------------------------------

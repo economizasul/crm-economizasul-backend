@@ -1,5 +1,6 @@
 // models/User.js
-const pool = require('../db');
+const { pool } = require('../config/db');
+
 
 const User = {
   async createTable() {
