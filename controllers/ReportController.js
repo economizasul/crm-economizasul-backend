@@ -261,7 +261,11 @@ static async getLossReasons(req, res) {
       query += " AND " + conditions.join(" AND ");
     }
 
-    query += " GROUP BY reason ORDER BY total DESC";
+    query += `
+      GROUP BY reason_for_loss
+      ORDER BY total DESC
+    `;
+
 
     const result = await pool.query(query, values);
 
