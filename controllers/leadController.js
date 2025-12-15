@@ -244,6 +244,17 @@ async createLead(req, res) {
         return res.status(403).json({ error: 'Acesso negado.' });
       }
 
+      const addressFromBody = req.body.address?.trim();
+      const existingAddress = existingLead.address?.trim();
+
+      const addressChanged =
+        addressFromBody &&
+        addressFromBody !== existingAddress;
+
+      const needsGeocoding =
+        addressChanged || !existingLead.lat || !existingLead.lng;
+
+
       const updates = {
         name: name?.trim() || existingLead.name,
         email: email?.trim() || existingLead.email,
@@ -297,6 +308,45 @@ async createLead(req, res) {
           console.error("❌ Erro ao re-geocodificar endereço durante update:", e);
         }
       }
+
+    if (needsGeocoding && addressFromBody) {
+      try {
+        const fetch = (await import('node-fetch')).default;
+
+        const url = `https://nominatim.openstreetmap.org/search?format=json&addressdetails=1&limit=1&q=${encodeURIComponent(addressFromBody)}`;
+
+        const geoResp = await fetch(url, {
+          headers: { 'User-Agent': 'economizasul-crm/1.0' }
+        });
+
+        const data = await geoResp.json();
+
+        if (data && data.length > 0) {
+          updates.lat = parseFloat(data[0].lat);
+          updates.lng = parseFloat(data[0].lon);
+
+          const addr = data[0].address || {};
+          updates.cidade =
+            addr.city ||
+            addr.town ||
+            addr.village ||
+            addr.municipality ||
+            addr.county ||
+            null;
+
+          updates.regiao =
+            addr.state ||
+            addr.region ||
+            addr.state_district ||
+            null;
+
+          updates.google_maps_link = `https://www.google.com/maps?q=${updates.lat},${updates.lng}`;
+        }
+      } catch (err) {
+        console.error('❌ Erro ao geocodificar no update:', err);
+      }
+    }
+
 
       updates.lat = lat;
       updates.lng = lng;
