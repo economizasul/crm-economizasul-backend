@@ -214,22 +214,22 @@ class ReportController {
   }
 
 // =====================================================
-// NOVO ENDPOINT - MOTIVOS DE PERDA
+// ENDPOINT - MOTIVOS DE PERDA (CORRIGIDO)
 // =====================================================
 static async getLossReasons(req, res) {
   try {
     let filters = req.body.filters || req.query.filters || {};
     if (typeof filters === 'string') {
-      try { filters = JSON.parse(filters); } catch (e) { filters = {}; }
+      try { filters = JSON.parse(filters); } catch { filters = {}; }
     }
 
     const userId = req.user?.id || null;
-    const isAdmin = req.user?.role === 'Admin' || false;
+    const isAdmin = req.user?.role === 'Admin';
 
     let query = `
       SELECT 
         reason_for_loss AS reason,
-        COUNT(*) AS total
+        COUNT(*)::int AS total
       FROM leads
       WHERE status = 'Perdido'
         AND reason_for_loss IS NOT NULL
@@ -239,28 +239,26 @@ static async getLossReasons(req, res) {
     const conditions = [];
     const values = [];
 
-    // filtro por data
+    // 📅 Filtro por data
     if (filters.startDate && filters.endDate) {
-      conditions.push(`date_lost BETWEEN $${values.length + 1} AND $${values.length + 2}`);
+      conditions.push(`updated_at BETWEEN $${values.length + 1} AND $${values.length + 2}`);
       values.push(filters.startDate, filters.endDate);
     }
 
-    // filtro por vendedor (admin seleciona)
-    if (filters.vendedor && filters.vendedor !== 'todos') {
-      conditions.push(`seller_id = $${values.length + 1}`);
-      values.push(filters.vendedor);
+    // 👤 Admin filtrando por vendedor
+    if (isAdmin && filters.ownerId) {
+      conditions.push(`owner_id = $${values.length + 1}`);
+      values.push(filters.ownerId);
     }
 
-    // usuário comum vê somente seus leads
-    if (!isAdmin) {
-      conditions.push(`seller_id = $${values.length + 1}`);
+    // 🔒 Usuário comum vê apenas os próprios leads
+    if (!isAdmin && userId) {
+      conditions.push(`owner_id = $${values.length + 1}`);
       values.push(userId);
     }
 
-
-
     if (conditions.length > 0) {
-      query += " AND " + conditions.join(" AND ");
+      query += ' AND ' + conditions.join(' AND ');
     }
 
     query += `
@@ -268,14 +266,13 @@ static async getLossReasons(req, res) {
       ORDER BY total DESC
     `;
 
-
     const result = await pool.query(query, values);
 
-    const total = result.rows.reduce((acc, r) => acc + Number(r.total), 0);
+    const total = result.rows.reduce((acc, r) => acc + r.total, 0);
 
     const formatted = result.rows.map(r => ({
       reason: r.reason,
-      total: Number(r.total),
+      total: r.total,
       percent: total > 0 ? Number(((r.total / total) * 100).toFixed(1)) : 0
     }));
 
@@ -293,8 +290,6 @@ static async getLossReasons(req, res) {
   }
 }
 
-
 }
-
 
 module.exports = ReportController;
