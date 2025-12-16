@@ -253,9 +253,11 @@ static async getLossReasons(req, res) {
 
     // usuário comum vê somente seus leads
     if (!isAdmin) {
-      conditions.push(`owner_id = $${values.length + 1}`);
+      conditions.push(`seller_id = $${values.length + 1}`);
       values.push(userId);
     }
+
+
 
     if (conditions.length > 0) {
       query += " AND " + conditions.join(" AND ");
