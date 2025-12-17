@@ -92,7 +92,6 @@ const Lead = {
     return rows;
   },
 
-  // 🟢🟢🟢 LOG AQUI — ANTES DO INSERT
   async insert(payload) {
     console.log("📥 PAYLOAD RECEBIDO NO INSERT:", payload);
 
