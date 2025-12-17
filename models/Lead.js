@@ -10,7 +10,7 @@ const Lead = {
         name VARCHAR(255) NOT NULL,
         email VARCHAR(255),
         phone VARCHAR(50),
-        phone2 VARCHAR(50),  /* 🟢 Adicionado phone2 (Limpo) */
+        phone2 VARCHAR(50),
         document VARCHAR(50),
         address TEXT,
         status VARCHAR(100) DEFAULT 'Novo',
@@ -34,6 +34,7 @@ const Lead = {
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         date_won TIMESTAMP
+        next_contact_date TIMESTAMP WITHOUT TIME ZONE
       );
     `);
   },
