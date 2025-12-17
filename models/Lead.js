@@ -66,8 +66,15 @@ const Lead = {
     }
 
     if (params.search) {
-      query += ` AND (l.name ILIKE $${idx} OR l.phone ILIKE $${idx} OR l.email ILIKE $${idx})`;
-      values.push(`%${params.search}%`);
+      const searchPattern = `%${params.search}%`;
+      query += ` AND (
+        l.name ILIKE $${idx} OR
+        l.phone ILIKE $${idx} OR
+        l.email ILIKE $${idx} OR
+        l.document ILIKE $${idx} OR
+        l.uc ILIKE $${idx}
+      )`;
+      values.push(searchPattern);
       idx++;
     }
 
