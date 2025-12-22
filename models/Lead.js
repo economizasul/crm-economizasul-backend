@@ -33,7 +33,7 @@ const Lead = {
         seller_name VARCHAR(255),
         created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
         updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-        date_won TIMESTAMP
+        date_won TIMESTAMP,
         next_contact_date TIMESTAMP WITHOUT TIME ZONE
       );
     `);

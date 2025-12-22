@@ -72,6 +72,7 @@ formatLeadResponse(lead) {
         reasonForLoss: lead.reason_for_loss || null,
         sellerId: lead.seller_id || null,
         sellerName: lead.seller_name || null,
+        nextContactDate: lead.next_contact_date || null,
 
         metadata: lead.metadata || {},
         createdAt: lead.created_at,
@@ -170,6 +171,7 @@ async createLead(req, res) {
       reason_for_loss: reason_for_loss || null,
       seller_id: seller_id || null,
       seller_name: seller_name || null,
+      next_contact_date: req.body.next_contact_date ? new Date(req.body.next_contact_date).toISOString() : null,
     };
 
     const newLead = await Lead.insert(leadData);
@@ -355,13 +357,16 @@ async createLead(req, res) {
       updates.google_maps_link = google_maps_link;
 
       if (kw_sold !== undefined) updates.kw_sold = kw_sold ? parseFloat(kw_sold) : 0;
-      if (metadata !== undefined) updates.metadata = metadata;
-      if (reason_for_loss !== undefined) updates.reason_for_loss = reason_for_loss?.trim() || null;
-      if (seller_id !== undefined) updates.seller_id = seller_id || null;
-      if (seller_name !== undefined) updates.seller_name = seller_name?.trim() || null;
+        if (metadata !== undefined) updates.metadata = metadata;
+        if (reason_for_loss !== undefined) updates.reason_for_loss = reason_for_loss?.trim() || null;
+        if (seller_id !== undefined) updates.seller_id = seller_id || null;
+        if (seller_name !== undefined) updates.seller_name = seller_name?.trim() || null;
+        if (req.body.next_contact_date !== undefined) {
+        updates.next_contact_date = req.body.next_contact_date ? new Date(req.body.next_contact_date).toISOString() : null;
+      }
 
-      if (isAdmin && owner_id !== undefined) {
-        updates.owner_id = parseInt(owner_id, 10);
+        if (isAdmin && owner_id !== undefined) {
+          updates.owner_id = parseInt(owner_id, 10);
       }
 
       if (newNote?.text?.trim()) {
